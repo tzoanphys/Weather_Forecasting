@@ -1,0 +1,11 @@
+numpy
+pandas
+xarray
+matplotlib
+torch
+torchvision
+torchaudio
+cfgrib
+eccodes
+jupyter
+scikit-learn
