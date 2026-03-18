@@ -12,7 +12,11 @@ FORECAST = "000"   # analysis / f000
 filename = f"gfs.t{CYCLE}z.pgrb2.0p25.f{FORECAST}"
 url = f"https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{DATE}/{CYCLE}/atmos/{filename}"
 
-output_dir = Path("data/raw")
+# Always point to the real project root
+project_root = Path(__file__).resolve().parent.parent
+
+# Save into weather-ml-project/data/raw
+output_dir = project_root / "data" / "raw"
 output_dir.mkdir(parents=True, exist_ok=True)
 
 output_path = output_dir / filename
@@ -26,12 +30,15 @@ print(url)
 print("Saving to:")
 print(output_path)
 
-with requests.get(url, headers=headers, stream=True, timeout=60) as response:
-    response.raise_for_status()
-    with open(output_path, "wb") as f:
-        for chunk in response.iter_content(chunk_size=1024 * 1024):
-            if chunk:
-                f.write(chunk)
+if output_path.exists():
+    print("File already exists. Skipping download.")
+else:
+    with requests.get(url, headers=headers, stream=True, timeout=60) as response:
+        response.raise_for_status()
+        with open(output_path, "wb") as f:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    f.write(chunk)
 
-print("Download complete.")
-print(f"Saved file size: {output_path.stat().st_size / (1024**2):.2f} MB")
+    print("Download complete.")
+    print(f"Saved file size: {output_path.stat().st_size / (1024**2):.2f} MB")

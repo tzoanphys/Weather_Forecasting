@@ -1,39 +1,40 @@
 from pathlib import Path
-import cfgrib
 import xarray as xr
-import numpy as np
 
 # --------------------------------------------
 # Paths
 # --------------------------------------------
-raw_file = Path("data/raw/gfs.t00z.pgrb2.0p25.f000")
-processed_dir = Path("data/processed")
+project_root = Path(__file__).resolve().parent.parent
+
+raw_file = project_root / "data" / "raw" / "gfs.t00z.pgrb2.0p25.f000"
+processed_dir = project_root / "data" / "processed"
 processed_dir.mkdir(parents=True, exist_ok=True)
 
 print(f"Loading data from: {raw_file}")
 
 # --------------------------------------------
-# Open all GRIB datasets
+# Open only the 10 m wind dataset directly
 # --------------------------------------------
-datasets = cfgrib.open_datasets(raw_file)
+wind_ds = xr.open_dataset(
+    raw_file,
+    engine="cfgrib",
+    backend_kwargs={
+        "filter_by_keys": {
+            "typeOfLevel": "heightAboveGround",
+            "level": 10,
+        },
+        "indexpath": ""
+    }
+)
 
-print(f"Number of datasets found: {len(datasets)}")
+print("\nOpened 10 m wind dataset:")
+print(wind_ds)
 
 # --------------------------------------------
-# Find the dataset that contains u10 and v10
+# Check variables
 # --------------------------------------------
-wind_ds = None
-
-for i, ds in enumerate(datasets):
-    vars_in_ds = list(ds.data_vars)
-    if "u10" in vars_in_ds and "v10" in vars_in_ds:
-        wind_ds = ds
-        print(f"\nFound 10 m wind dataset at DATASET {i}")
-        print(wind_ds)
-        break
-
-if wind_ds is None:
-    raise ValueError("Could not find a dataset containing both u10 and v10.")
+if "u10" not in wind_ds.data_vars or "v10" not in wind_ds.data_vars:
+    raise ValueError("Could not find u10 and v10 in the opened dataset.")
 
 # --------------------------------------------
 # Crop Belgium region
