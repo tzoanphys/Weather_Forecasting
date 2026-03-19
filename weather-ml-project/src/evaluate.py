@@ -33,7 +33,7 @@ wind_speed.name = "wind_speed"
 def save_field_plot(data_array, title, output_path, cbar_label):
     plt.figure(figsize=(10, 6))
     #data_array.plot(cmap="viridis",interpolation="bilinear",cbar_kwargs={"label": cbar_label})
-
+    
     plot = data_array.plot(cbar_kwargs={"label": cbar_label})
     plt.title(title, fontsize=14)
     plt.xlabel("longitude [degrees_east]")
