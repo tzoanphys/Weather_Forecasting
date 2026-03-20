@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from model import SimpleWindCNN
+from src.simple_model import SimpleWindCNN
 from dataset import load_wind_time_series, WindForecastDataset
 
 

@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 
-from model import SimpleWindCNN
+#from simple_model import SimpleWindCNN
+from model import BetterWindCNN
 from dataset import load_wind_time_series, WindForecastDataset
 
 
@@ -167,7 +168,7 @@ def build_model(dataset: WindForecastDataset, device: torch.device) -> nn.Module
     print(f"\nModel input channels : {in_channels}")
     print(f"Model output channels: {out_channels}")
 
-    model = SimpleWindCNN(
+    model = BetterWindCNN(
         in_channels=in_channels,
         out_channels=out_channels
     ).to(device)
