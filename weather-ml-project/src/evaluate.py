@@ -1,11 +1,14 @@
 from pathlib import Path
 
+import geopandas as gpd
+import geodatasets
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torch.nn as nn
 
-from src.simple_model import SimpleWindCNN
+
+from model import BetterWindCNN
 from dataset import load_wind_time_series, WindForecastDataset
 
 
@@ -20,7 +23,7 @@ SAMPLE_INDEX = 0
 
 
 # ============================================================
-# Device selection
+# Device
 # ============================================================
 
 def get_device() -> torch.device:
@@ -44,13 +47,12 @@ def get_device() -> torch.device:
 # Paths
 # ============================================================
 
-def get_project_paths() -> tuple[Path, Path, Path, Path]:
+def get_paths() -> tuple[Path, Path, Path]:
     """
-    Return project paths:
-    - project root
+    Return:
     - processed data directory
-    - trained model path
-    - output directory for evaluation figures
+    - saved model path
+    - output directory
     """
     project_root = Path(__file__).resolve().parent.parent
     processed_dir = project_root / "data" / "processed"
@@ -58,18 +60,19 @@ def get_project_paths() -> tuple[Path, Path, Path, Path]:
     output_dir = project_root / "outputs"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    return project_root, processed_dir, model_path, output_dir
+    return processed_dir, model_path, output_dir
 
 
 # ============================================================
-# Data loading
+# Data
 # ============================================================
 
-def build_dataset(processed_dir: Path) -> WindForecastDataset:
+def build_dataset(processed_dir: Path) -> tuple[WindForecastDataset, np.ndarray, np.ndarray]:
     """
-    Load processed wind files and create the evaluation dataset.
+    Load processed files and create dataset.
+    Also return latitude and longitude for plotting.
     """
-    data, _ = load_wind_time_series(processed_dir)
+    data, _, latitudes, longitudes = load_wind_time_series(processed_dir)
 
     dataset = WindForecastDataset(
         data=data,
@@ -78,36 +81,32 @@ def build_dataset(processed_dir: Path) -> WindForecastDataset:
     )
 
     if len(dataset) == 0:
-        raise ValueError(
-            "The dataset contains zero samples. "
-            "Check your processed files and INPUT_STEPS / TARGET_OFFSET."
-        )
+        raise ValueError("No samples were created from the dataset.")
 
     print(f"\nEvaluation dataset contains {len(dataset)} sample(s).")
-    return dataset
+    return dataset, latitudes, longitudes
 
 
 # ============================================================
-# Model loading
+# Model
 # ============================================================
 
-def load_trained_model(
+def load_model(
     model_path: Path,
     dataset: WindForecastDataset,
     device: torch.device
-) -> nn.Module:
+) -> BetterWindCNN:
     """
-    Rebuild the model with the correct input/output shape
-    and load the trained weights.
+    Rebuild the model and load trained weights.
     """
     if not model_path.exists():
-        raise FileNotFoundError(f"Trained model not found: {model_path}")
+        raise FileNotFoundError(f"Model file not found: {model_path}")
 
     sample_x, sample_y = dataset[0]
     in_channels = sample_x.shape[0]
     out_channels = sample_y.shape[0]
 
-    model = SimpleWindCNN(
+    model = BetterWindCNN(
         in_channels=in_channels,
         out_channels=out_channels
     ).to(device)
@@ -124,35 +123,33 @@ def load_trained_model(
 # Prediction
 # ============================================================
 
-def predict_sample(
-    model: nn.Module,
+def predict_one_sample(
+    model: BetterWindCNN,
     dataset: WindForecastDataset,
     sample_index: int,
     device: torch.device
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
-    Run the model on one sample and return:
-    - input tensor
+    Predict one sample and return:
     - true target
     - predicted target
     """
     if sample_index < 0 or sample_index >= len(dataset):
         raise IndexError(
             f"sample_index={sample_index} is out of range. "
-            f"Valid range: 0 to {len(dataset) - 1}"
+            f"Valid range is 0 to {len(dataset) - 1}."
         )
 
     x, y_true = dataset[sample_index]
-    x_batch = x.unsqueeze(0).to(device)
+    x = x.unsqueeze(0).to(device)
 
     with torch.no_grad():
-        y_pred = model(x_batch)
+        y_pred = model(x)
 
-    x_np = x.cpu().numpy()
     y_true_np = y_true.cpu().numpy()
     y_pred_np = y_pred.squeeze(0).cpu().numpy()
 
-    return x_np, y_true_np, y_pred_np
+    return y_true_np, y_pred_np
 
 
 # ============================================================
@@ -161,26 +158,38 @@ def predict_sample(
 
 def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> tuple[float, float]:
     """
-    Compute simple regression metrics.
+    Compute MSE and MAE.
     """
     mse = np.mean((y_pred - y_true) ** 2)
     mae = np.mean(np.abs(y_pred - y_true))
     return mse, mae
 
 
+
 # ============================================================
 # Plotting
 # ============================================================
 
-def plot_results(
+# ============================================================
+# Plotting
+# ============================================================
+
+def plot_prediction_maps(
     y_true: np.ndarray,
     y_pred: np.ndarray,
-    sample_index: int,
-    output_dir: Path
+    latitudes: np.ndarray,
+    longitudes: np.ndarray,
+    output_dir: Path,
+    sample_index: int
 ) -> None:
     """
-    Plot true and predicted u10 / v10 fields and save the figure.
+    Plot true and predicted u10 / v10 maps over the Belgium domain only.
     """
+    extent = [
+        longitudes.min(), longitudes.max(),
+        latitudes.min(), latitudes.max()
+    ]
+
     true_u10 = y_true[0]
     true_v10 = y_true[1]
     pred_u10 = y_pred[0]
@@ -188,80 +197,110 @@ def plot_results(
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
 
-    im0 = axes[0, 0].imshow(true_u10, origin="lower")
+    im0 = axes[0, 0].imshow(true_u10, origin="lower", extent=extent, aspect="auto")
+    axes[0, 0].set_xlim(longitudes.min(), longitudes.max())
+    axes[0, 0].set_ylim(latitudes.min(), latitudes.max())
     axes[0, 0].set_title("True u10")
-    plt.colorbar(im0, ax=axes[0, 0], fraction=0.046, pad=0.04)
+    axes[0, 0].set_xlabel("Longitude")
+    axes[0, 0].set_ylabel("Latitude")
+    plt.colorbar(im0, ax=axes[0, 0])
 
-    im1 = axes[0, 1].imshow(pred_u10, origin="lower")
+    im1 = axes[0, 1].imshow(pred_u10, origin="lower", extent=extent, aspect="auto")
+    axes[0, 1].set_xlim(longitudes.min(), longitudes.max())
+    axes[0, 1].set_ylim(latitudes.min(), latitudes.max())
     axes[0, 1].set_title("Predicted u10")
-    plt.colorbar(im1, ax=axes[0, 1], fraction=0.046, pad=0.04)
+    axes[0, 1].set_xlabel("Longitude")
+    axes[0, 1].set_ylabel("Latitude")
+    plt.colorbar(im1, ax=axes[0, 1])
 
-    im2 = axes[1, 0].imshow(true_v10, origin="lower")
+    im2 = axes[1, 0].imshow(true_v10, origin="lower", extent=extent, aspect="auto")
+    axes[1, 0].set_xlim(longitudes.min(), longitudes.max())
+    axes[1, 0].set_ylim(latitudes.min(), latitudes.max())
     axes[1, 0].set_title("True v10")
-    plt.colorbar(im2, ax=axes[1, 0], fraction=0.046, pad=0.04)
+    axes[1, 0].set_xlabel("Longitude")
+    axes[1, 0].set_ylabel("Latitude")
+    plt.colorbar(im2, ax=axes[1, 0])
 
-    im3 = axes[1, 1].imshow(pred_v10, origin="lower")
+    im3 = axes[1, 1].imshow(pred_v10, origin="lower", extent=extent, aspect="auto")
+    axes[1, 1].set_xlim(longitudes.min(), longitudes.max())
+    axes[1, 1].set_ylim(latitudes.min(), latitudes.max())
     axes[1, 1].set_title("Predicted v10")
-    plt.colorbar(im3, ax=axes[1, 1], fraction=0.046, pad=0.04)
+    axes[1, 1].set_xlabel("Longitude")
+    axes[1, 1].set_ylabel("Latitude")
+    plt.colorbar(im3, ax=axes[1, 1])
 
-    fig.suptitle(f"Forecast Evaluation - Sample {sample_index}", fontsize=14)
+    fig.suptitle(f"Forecast Evaluation - Belgium - Sample {sample_index}")
     plt.tight_layout()
 
-    output_path = output_dir / f"evaluation_sample_{sample_index}.png"
+    output_path = output_dir / f"evaluation_sample_{sample_index}_belgium_only.png"
     fig.savefig(output_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
-    print(f"Saved prediction figure to: {output_path}")
+    print(f"Saved prediction maps to: {output_path}")
 
 
 def plot_error_maps(
     y_true: np.ndarray,
     y_pred: np.ndarray,
-    sample_index: int,
-    output_dir: Path
+    latitudes: np.ndarray,
+    longitudes: np.ndarray,
+    output_dir: Path,
+    sample_index: int
 ) -> None:
     """
-    Plot absolute error maps for u10 and v10 and save the figure.
+    Plot absolute error maps over the Belgium domain only.
     """
+    extent = [
+        longitudes.min(), longitudes.max(),
+        latitudes.min(), latitudes.max()
+    ]
+
     error_u10 = np.abs(y_pred[0] - y_true[0])
     error_v10 = np.abs(y_pred[1] - y_true[1])
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
 
-    im0 = axes[0].imshow(error_u10, origin="lower")
+    im0 = axes[0].imshow(error_u10, origin="lower", extent=extent, aspect="auto")
+    axes[0].set_xlim(longitudes.min(), longitudes.max())
+    axes[0].set_ylim(latitudes.min(), latitudes.max())
     axes[0].set_title("Absolute Error - u10")
-    plt.colorbar(im0, ax=axes[0], fraction=0.046, pad=0.04)
+    axes[0].set_xlabel("Longitude")
+    axes[0].set_ylabel("Latitude")
+    plt.colorbar(im0, ax=axes[0])
 
-    im1 = axes[1].imshow(error_v10, origin="lower")
+    im1 = axes[1].imshow(error_v10, origin="lower", extent=extent, aspect="auto")
+    axes[1].set_xlim(longitudes.min(), longitudes.max())
+    axes[1].set_ylim(latitudes.min(), latitudes.max())
     axes[1].set_title("Absolute Error - v10")
-    plt.colorbar(im1, ax=axes[1], fraction=0.046, pad=0.04)
+    axes[1].set_xlabel("Longitude")
+    axes[1].set_ylabel("Latitude")
+    plt.colorbar(im1, ax=axes[1])
 
-    fig.suptitle(f"Prediction Error Maps - Sample {sample_index}", fontsize=14)
+    fig.suptitle(f"Error Maps - Belgium - Sample {sample_index}")
     plt.tight_layout()
 
-    output_path = output_dir / f"error_maps_sample_{sample_index}.png"
+    output_path = output_dir / f"error_maps_sample_{sample_index}_belgium_only.png"
     fig.savefig(output_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
-    print(f"Saved error figure to: {output_path}")
-
+    print(f"Saved error maps to: {output_path}")
 
 # ============================================================
-# Main evaluation pipeline
+# Main
 # ============================================================
 
 def main() -> None:
     device = get_device()
-    _, processed_dir, model_path, output_dir = get_project_paths()
+    processed_dir, model_path, output_dir = get_paths()
 
     print(f"\nUsing data from: {processed_dir}")
     print(f"Loading model from: {model_path}")
-    print(f"Saving evaluation figures to: {output_dir}")
+    print(f"Saving figures to: {output_dir}")
 
-    dataset = build_dataset(processed_dir)
-    model = load_trained_model(model_path, dataset, device)
+    dataset, latitudes, longitudes = build_dataset(processed_dir)
+    model = load_model(model_path, dataset, device)
 
-    x, y_true, y_pred = predict_sample(
+    y_true, y_pred = predict_one_sample(
         model=model,
         dataset=dataset,
         sample_index=SAMPLE_INDEX,
@@ -271,14 +310,28 @@ def main() -> None:
     mse, mae = compute_metrics(y_true, y_pred)
 
     print(f"\nEvaluating sample index: {SAMPLE_INDEX}")
-    print(f"Input shape       : {x.shape}")
     print(f"True target shape : {y_true.shape}")
     print(f"Pred target shape : {y_pred.shape}")
     print(f"MSE               : {mse:.6f}")
     print(f"MAE               : {mae:.6f}")
 
-    plot_results(y_true, y_pred, SAMPLE_INDEX, output_dir)
-    plot_error_maps(y_true, y_pred, SAMPLE_INDEX, output_dir)
+    plot_prediction_maps(
+        y_true=y_true,
+        y_pred=y_pred,
+        latitudes=latitudes,
+        longitudes=longitudes,
+        output_dir=output_dir,
+        sample_index=SAMPLE_INDEX
+    )
+
+    plot_error_maps(
+        y_true=y_true,
+        y_pred=y_pred,
+        latitudes=latitudes,
+        longitudes=longitudes,
+        output_dir=output_dir,
+        sample_index=SAMPLE_INDEX
+    )
 
 
 if __name__ == "__main__":

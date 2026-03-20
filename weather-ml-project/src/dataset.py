@@ -32,12 +32,30 @@ def load_wind_time_series(processed_dir):
         raise FileNotFoundError(f"No processed files found in {processed_dir}")
 
     time_steps = []
+    latitudes = None
+    longitudes = None
 
-    for file_path in files:
+    for i, file_path in enumerate(files):
         ds = xr.open_dataset(file_path, decode_times=False)
 
         u10 = ds["u10"].values
         v10 = ds["v10"].values
+
+        # Read coordinates only once
+        if i == 0:
+            if "latitude" in ds.coords:
+                latitudes = ds["latitude"].values
+            elif "lat" in ds.coords:
+                latitudes = ds["lat"].values
+            else:
+                raise KeyError("Latitude coordinate not found in dataset.")
+
+            if "longitude" in ds.coords:
+                longitudes = ds["longitude"].values
+            elif "lon" in ds.coords:
+                longitudes = ds["lon"].values
+            else:
+                raise KeyError("Longitude coordinate not found in dataset.")
 
         state = np.stack([u10, v10], axis=0)
         time_steps.append(state)
@@ -47,7 +65,7 @@ def load_wind_time_series(processed_dir):
     print("\nStacked time-series shape:")
     print(data.shape)
 
-    return data, files
+    return data, files, latitudes, longitudes
 
 
 class WindForecastDataset(Dataset):

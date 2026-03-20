@@ -73,11 +73,11 @@ def get_project_paths() -> tuple[Path, Path, Path]:
 # Data preparation
 # ============================================================
 
-def build_dataset(processed_dir: Path) -> WindForecastDataset:
+def build_dataset(processed_dir: Path):
     """
-    Load wind data from disk and create the forecasting dataset.
+    Load processed wind files and create the evaluation dataset.
     """
-    data, _ = load_wind_time_series(processed_dir)
+    data, _, latitudes, longitudes = load_wind_time_series(processed_dir)
 
     dataset = WindForecastDataset(
         data=data,
@@ -88,12 +88,11 @@ def build_dataset(processed_dir: Path) -> WindForecastDataset:
     if len(dataset) == 0:
         raise ValueError(
             "The dataset contains zero samples. "
-            "Check the number of input files and the values of "
-            f"INPUT_STEPS={INPUT_STEPS} and TARGET_OFFSET={TARGET_OFFSET}."
+            "Check your processed files and INPUT_STEPS / TARGET_OFFSET."
         )
 
-    print(f"\nDataset successfully created with {len(dataset)} sample(s).")
-    return dataset
+    print(f"\nEvaluation dataset contains {len(dataset)} sample(s).")
+    return dataset, latitudes, longitudes
 
 
 def build_data_loaders(
@@ -243,7 +242,7 @@ def train_model() -> None:
     print(f"\nUsing data from: {processed_dir}")
     print(f"Models will be saved in: {model_dir}")
 
-    dataset = build_dataset(processed_dir)
+    dataset, latitudes, longitudes = build_dataset(processed_dir)
     train_loader, val_loader = build_data_loaders(dataset)
     model = build_model(dataset, device)
 
