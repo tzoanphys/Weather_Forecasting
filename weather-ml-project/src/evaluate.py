@@ -1,8 +1,8 @@
 from pathlib import Path
+import urllib.request
+import zipfile
 
 import geopandas as gpd
-import geodatasets
-
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -170,9 +170,52 @@ def compute_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> tuple[float, floa
 # Plotting
 # ============================================================
 
-# ============================================================
-# Plotting
-# ============================================================
+def _load_natural_earth_countries() -> gpd.GeoDataFrame:
+    """
+    Download and cache the Natural Earth 50m countries shapefile.
+    Stored in the project data/processed directory.
+    """
+    cache_dir = Path(__file__).resolve().parent.parent / "data" / "processed" / "natural_earth"
+    shp_path = cache_dir / "ne_50m_admin_0_countries.shp"
+
+    if not shp_path.exists():
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        url = "https://naciscdn.org/naturalearth/50m/cultural/ne_50m_admin_0_countries.zip"
+        zip_path = cache_dir / "ne_50m_admin_0_countries.zip"
+        print("Downloading Natural Earth 50m countries (one-time)...")
+        urllib.request.urlretrieve(url, zip_path)
+        with zipfile.ZipFile(zip_path, "r") as z:
+            z.extractall(cache_dir)
+        zip_path.unlink()
+        print("Done.")
+
+    return gpd.read_file(shp_path)
+
+
+def add_map_background(ax: plt.Axes, extent: list) -> None:
+    """
+    Draw a Natural Earth map background:
+    - surrounding countries in light grey
+    - Belgium filled in a slightly lighter shade with a bold border
+    """
+    world = _load_natural_earth_countries()
+    lon_min, lon_max, lat_min, lat_max = extent
+
+    # Clip to a slightly larger area than the plot extent
+    from shapely.geometry import box as shapely_box
+    region = shapely_box(lon_min - 1, lat_min - 1, lon_max + 1, lat_max + 1)
+    visible = world[world.geometry.intersects(region)]
+
+    visible[visible["NAME"] != "Belgium"].plot(
+        ax=ax, color="none", edgecolor="#777777", linewidth=0.7, zorder=3
+    )
+    visible[visible["NAME"] == "Belgium"].plot(
+        ax=ax, color="none", edgecolor="black", linewidth=2.0, zorder=3
+    )
+
+    ax.set_xlim(lon_min, lon_max)
+    ax.set_ylim(lat_min, lat_max)
+
 
 def plot_prediction_maps(
     y_true: np.ndarray,
@@ -197,33 +240,28 @@ def plot_prediction_maps(
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
 
-    im0 = axes[0, 0].imshow(true_u10, origin="lower", extent=extent, aspect="auto")
-    axes[0, 0].set_xlim(longitudes.min(), longitudes.max())
-    axes[0, 0].set_ylim(latitudes.min(), latitudes.max())
+    for ax in axes.flat:
+        add_map_background(ax, extent)
+
+    im0 = axes[0, 0].imshow(true_u10, origin="lower", extent=extent, aspect="auto", alpha=1.0, zorder=2)
     axes[0, 0].set_title("True u10")
     axes[0, 0].set_xlabel("Longitude")
     axes[0, 0].set_ylabel("Latitude")
     plt.colorbar(im0, ax=axes[0, 0])
 
-    im1 = axes[0, 1].imshow(pred_u10, origin="lower", extent=extent, aspect="auto")
-    axes[0, 1].set_xlim(longitudes.min(), longitudes.max())
-    axes[0, 1].set_ylim(latitudes.min(), latitudes.max())
+    im1 = axes[0, 1].imshow(pred_u10, origin="lower", extent=extent, aspect="auto", alpha=1.0, zorder=2)
     axes[0, 1].set_title("Predicted u10")
     axes[0, 1].set_xlabel("Longitude")
     axes[0, 1].set_ylabel("Latitude")
     plt.colorbar(im1, ax=axes[0, 1])
 
-    im2 = axes[1, 0].imshow(true_v10, origin="lower", extent=extent, aspect="auto")
-    axes[1, 0].set_xlim(longitudes.min(), longitudes.max())
-    axes[1, 0].set_ylim(latitudes.min(), latitudes.max())
+    im2 = axes[1, 0].imshow(true_v10, origin="lower", extent=extent, aspect="auto", alpha=1.0, zorder=2)
     axes[1, 0].set_title("True v10")
     axes[1, 0].set_xlabel("Longitude")
     axes[1, 0].set_ylabel("Latitude")
     plt.colorbar(im2, ax=axes[1, 0])
 
-    im3 = axes[1, 1].imshow(pred_v10, origin="lower", extent=extent, aspect="auto")
-    axes[1, 1].set_xlim(longitudes.min(), longitudes.max())
-    axes[1, 1].set_ylim(latitudes.min(), latitudes.max())
+    im3 = axes[1, 1].imshow(pred_v10, origin="lower", extent=extent, aspect="auto", alpha=1.0, zorder=2)
     axes[1, 1].set_title("Predicted v10")
     axes[1, 1].set_xlabel("Longitude")
     axes[1, 1].set_ylabel("Latitude")
@@ -260,17 +298,16 @@ def plot_error_maps(
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
 
-    im0 = axes[0].imshow(error_u10, origin="lower", extent=extent, aspect="auto")
-    axes[0].set_xlim(longitudes.min(), longitudes.max())
-    axes[0].set_ylim(latitudes.min(), latitudes.max())
+    for ax in axes:
+        add_map_background(ax, extent)
+
+    im0 = axes[0].imshow(error_u10, origin="lower", extent=extent, aspect="auto", alpha=1.0, zorder=2)
     axes[0].set_title("Absolute Error - u10")
     axes[0].set_xlabel("Longitude")
     axes[0].set_ylabel("Latitude")
     plt.colorbar(im0, ax=axes[0])
 
-    im1 = axes[1].imshow(error_v10, origin="lower", extent=extent, aspect="auto")
-    axes[1].set_xlim(longitudes.min(), longitudes.max())
-    axes[1].set_ylim(latitudes.min(), latitudes.max())
+    im1 = axes[1].imshow(error_v10, origin="lower", extent=extent, aspect="auto", alpha=1.0, zorder=2)
     axes[1].set_title("Absolute Error - v10")
     axes[1].set_xlabel("Longitude")
     axes[1].set_ylabel("Latitude")
