@@ -195,8 +195,9 @@ def _load_natural_earth_countries() -> gpd.GeoDataFrame:
 def add_map_background(ax: plt.Axes, extent: list) -> None:
     """
     Draw a Natural Earth map background:
-    - surrounding countries in light grey
-    - Belgium filled in a slightly lighter shade with a bold border
+    - surrounding countries in semi-transparent light grey
+    - Belgium with a bold black border
+    - lat/lon gridlines
     """
     world = _load_natural_earth_countries()
     lon_min, lon_max, lat_min, lat_max = extent
@@ -207,14 +208,22 @@ def add_map_background(ax: plt.Axes, extent: list) -> None:
     visible = world[world.geometry.intersects(region)]
 
     visible[visible["NAME"] != "Belgium"].plot(
-        ax=ax, color="none", edgecolor="#777777", linewidth=0.7, zorder=3
+        ax=ax, color="#d0d0d0", edgecolor="#777777", linewidth=0.7, zorder=3, alpha=0.45
     )
     visible[visible["NAME"] == "Belgium"].plot(
-        ax=ax, color="none", edgecolor="black", linewidth=2.0, zorder=3
+        ax=ax, color="none", edgecolor="black", linewidth=2.2, zorder=4
     )
 
     ax.set_xlim(lon_min, lon_max)
     ax.set_ylim(lat_min, lat_max)
+
+    # Lat/lon gridlines
+    lon_ticks = np.arange(int(np.ceil(lon_min)), int(np.floor(lon_max)) + 1, 1)
+    lat_ticks = np.arange(int(np.ceil(lat_min)), int(np.floor(lat_max)) + 1, 1)
+    ax.set_xticks(lon_ticks)
+    ax.set_yticks(lat_ticks)
+    ax.grid(True, color="white", linewidth=0.5, linestyle="--", alpha=0.6, zorder=5)
+    ax.tick_params(labelsize=7)
 
 
 def plot_prediction_maps(
@@ -226,7 +235,10 @@ def plot_prediction_maps(
     sample_index: int
 ) -> None:
     """
-    Plot true and predicted u10 / v10 maps over the Belgium domain only.
+    Plot true and predicted u10 / v10 maps over the Belgium domain.
+    - Shared symmetric color scale per variable for honest True vs Predicted comparison
+    - Diverging colormap (RdBu_r): blue = wind blowing west/south, red = east/north
+    - Quiver arrows showing wind direction and relative speed
     """
     extent = [
         longitudes.min(), longitudes.max(),
@@ -238,36 +250,69 @@ def plot_prediction_maps(
     pred_u10 = y_pred[0]
     pred_v10 = y_pred[1]
 
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+    # Symmetric color range shared between True and Predicted for each component
+    u_abs = max(abs(true_u10).max(), abs(pred_u10).max())
+    v_abs = max(abs(true_v10).max(), abs(pred_v10).max())
+
+    # Quiver arrow grid — subsample so arrows don't overlap
+    lon_grid, lat_grid = np.meshgrid(longitudes, latitudes)
+    step = max(1, min(len(latitudes), len(longitudes)) // 8)
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    cmap = "RdBu_r"
 
     for ax in axes.flat:
         add_map_background(ax, extent)
 
-    im0 = axes[0, 0].imshow(true_u10, origin="lower", extent=extent, aspect="auto", alpha=1.0, zorder=2)
-    axes[0, 0].set_title("True u10")
+    # --- True u10 ---
+    im0 = axes[0, 0].imshow(true_u10, origin="lower", extent=extent, aspect="auto",
+                             alpha=0.85, zorder=2, cmap=cmap, vmin=-u_abs, vmax=u_abs)
+    axes[0, 0].quiver(lon_grid[::step, ::step], lat_grid[::step, ::step],
+                      true_u10[::step, ::step], true_v10[::step, ::step],
+                      scale=60, width=0.004, color="k", zorder=6)
+    axes[0, 0].set_title("True u10", fontsize=12, fontweight="bold")
     axes[0, 0].set_xlabel("Longitude")
     axes[0, 0].set_ylabel("Latitude")
-    plt.colorbar(im0, ax=axes[0, 0])
+    cb = plt.colorbar(im0, ax=axes[0, 0])
+    cb.set_label("m/s")
 
-    im1 = axes[0, 1].imshow(pred_u10, origin="lower", extent=extent, aspect="auto", alpha=1.0, zorder=2)
-    axes[0, 1].set_title("Predicted u10")
+    # --- Predicted u10 ---
+    im1 = axes[0, 1].imshow(pred_u10, origin="lower", extent=extent, aspect="auto",
+                             alpha=0.85, zorder=2, cmap=cmap, vmin=-u_abs, vmax=u_abs)
+    axes[0, 1].quiver(lon_grid[::step, ::step], lat_grid[::step, ::step],
+                      pred_u10[::step, ::step], pred_v10[::step, ::step],
+                      scale=60, width=0.004, color="k", zorder=6)
+    axes[0, 1].set_title("Predicted u10", fontsize=12, fontweight="bold")
     axes[0, 1].set_xlabel("Longitude")
     axes[0, 1].set_ylabel("Latitude")
-    plt.colorbar(im1, ax=axes[0, 1])
+    cb = plt.colorbar(im1, ax=axes[0, 1])
+    cb.set_label("m/s")
 
-    im2 = axes[1, 0].imshow(true_v10, origin="lower", extent=extent, aspect="auto", alpha=1.0, zorder=2)
-    axes[1, 0].set_title("True v10")
+    # --- True v10 ---
+    im2 = axes[1, 0].imshow(true_v10, origin="lower", extent=extent, aspect="auto",
+                             alpha=0.85, zorder=2, cmap=cmap, vmin=-v_abs, vmax=v_abs)
+    axes[1, 0].quiver(lon_grid[::step, ::step], lat_grid[::step, ::step],
+                      true_u10[::step, ::step], true_v10[::step, ::step],
+                      scale=60, width=0.004, color="k", zorder=6)
+    axes[1, 0].set_title("True v10", fontsize=12, fontweight="bold")
     axes[1, 0].set_xlabel("Longitude")
     axes[1, 0].set_ylabel("Latitude")
-    plt.colorbar(im2, ax=axes[1, 0])
+    cb = plt.colorbar(im2, ax=axes[1, 0])
+    cb.set_label("m/s")
 
-    im3 = axes[1, 1].imshow(pred_v10, origin="lower", extent=extent, aspect="auto", alpha=1.0, zorder=2)
-    axes[1, 1].set_title("Predicted v10")
+    # --- Predicted v10 ---
+    im3 = axes[1, 1].imshow(pred_v10, origin="lower", extent=extent, aspect="auto",
+                             alpha=0.85, zorder=2, cmap=cmap, vmin=-v_abs, vmax=v_abs)
+    axes[1, 1].quiver(lon_grid[::step, ::step], lat_grid[::step, ::step],
+                      pred_u10[::step, ::step], pred_v10[::step, ::step],
+                      scale=60, width=0.004, color="k", zorder=6)
+    axes[1, 1].set_title("Predicted v10", fontsize=12, fontweight="bold")
     axes[1, 1].set_xlabel("Longitude")
     axes[1, 1].set_ylabel("Latitude")
-    plt.colorbar(im3, ax=axes[1, 1])
+    cb = plt.colorbar(im3, ax=axes[1, 1])
+    cb.set_label("m/s")
 
-    fig.suptitle(f"Forecast Evaluation - Belgium - Sample {sample_index}")
+    fig.suptitle(f"Forecast Evaluation - Belgium - Sample {sample_index}", fontsize=14, fontweight="bold")
     plt.tight_layout()
 
     output_path = output_dir / f"evaluation_sample_{sample_index}_belgium_only.png"
@@ -296,24 +341,41 @@ def plot_error_maps(
     error_u10 = np.abs(y_pred[0] - y_true[0])
     error_v10 = np.abs(y_pred[1] - y_true[1])
 
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+    # Shared color scale so both panels are directly comparable
+    error_max = max(error_u10.max(), error_v10.max())
+
+    # Quiver arrows showing true wind direction for spatial reference
+    lon_grid, lat_grid = np.meshgrid(longitudes, latitudes)
+    step = max(1, min(len(latitudes), len(longitudes)) // 8)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
 
     for ax in axes:
         add_map_background(ax, extent)
 
-    im0 = axes[0].imshow(error_u10, origin="lower", extent=extent, aspect="auto", alpha=1.0, zorder=2)
-    axes[0].set_title("Absolute Error - u10")
+    im0 = axes[0].imshow(error_u10, origin="lower", extent=extent, aspect="auto",
+                         alpha=0.85, zorder=2, cmap="YlOrRd", vmin=0, vmax=error_max)
+    axes[0].quiver(lon_grid[::step, ::step], lat_grid[::step, ::step],
+                   y_true[0][::step, ::step], y_true[1][::step, ::step],
+                   scale=60, width=0.004, color="k", zorder=6)
+    axes[0].set_title("Absolute Error - u10", fontsize=12, fontweight="bold")
     axes[0].set_xlabel("Longitude")
     axes[0].set_ylabel("Latitude")
-    plt.colorbar(im0, ax=axes[0])
+    cb = plt.colorbar(im0, ax=axes[0])
+    cb.set_label("m/s")
 
-    im1 = axes[1].imshow(error_v10, origin="lower", extent=extent, aspect="auto", alpha=1.0, zorder=2)
-    axes[1].set_title("Absolute Error - v10")
+    im1 = axes[1].imshow(error_v10, origin="lower", extent=extent, aspect="auto",
+                         alpha=0.85, zorder=2, cmap="YlOrRd", vmin=0, vmax=error_max)
+    axes[1].quiver(lon_grid[::step, ::step], lat_grid[::step, ::step],
+                   y_true[0][::step, ::step], y_true[1][::step, ::step],
+                   scale=60, width=0.004, color="k", zorder=6)
+    axes[1].set_title("Absolute Error - v10", fontsize=12, fontweight="bold")
     axes[1].set_xlabel("Longitude")
     axes[1].set_ylabel("Latitude")
-    plt.colorbar(im1, ax=axes[1])
+    cb = plt.colorbar(im1, ax=axes[1])
+    cb.set_label("m/s")
 
-    fig.suptitle(f"Error Maps - Belgium - Sample {sample_index}")
+    fig.suptitle(f"Error Maps - Belgium - Sample {sample_index}", fontsize=14, fontweight="bold")
     plt.tight_layout()
 
     output_path = output_dir / f"error_maps_sample_{sample_index}_belgium_only.png"
