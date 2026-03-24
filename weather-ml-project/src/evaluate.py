@@ -192,38 +192,73 @@ def _load_natural_earth_countries() -> gpd.GeoDataFrame:
     return gpd.read_file(shp_path)
 
 
+# Dark navy background matching professional NWP style
+_BG_COLOR = "#0b0e1a"
+
+
 def add_map_background(ax: plt.Axes, extent: list) -> None:
     """
-    Draw a Natural Earth map background:
-    - surrounding countries in semi-transparent light grey
-    - Belgium with a bold black border
-    - lat/lon gridlines
+    Draw a dark-style map background:
+    - dark navy fill
+    - thin white country borders
+    - subtle white lat/lon gridlines
     """
     world = _load_natural_earth_countries()
     lon_min, lon_max, lat_min, lat_max = extent
 
-    # Clip to a slightly larger area than the plot extent
     from shapely.geometry import box as shapely_box
     region = shapely_box(lon_min - 1, lat_min - 1, lon_max + 1, lat_max + 1)
     visible = world[world.geometry.intersects(region)]
 
+    ax.set_facecolor(_BG_COLOR)
+
+    # All country borders in white, Belgium slightly bolder
     visible[visible["NAME"] != "Belgium"].plot(
-        ax=ax, color="#d0d0d0", edgecolor="#777777", linewidth=0.7, zorder=3, alpha=0.45
+        ax=ax, color="none", edgecolor="white", linewidth=0.6, zorder=4, alpha=0.7
     )
     visible[visible["NAME"] == "Belgium"].plot(
-        ax=ax, color="none", edgecolor="black", linewidth=2.2, zorder=4
+        ax=ax, color="none", edgecolor="white", linewidth=1.8, zorder=5
     )
 
     ax.set_xlim(lon_min, lon_max)
     ax.set_ylim(lat_min, lat_max)
 
-    # Lat/lon gridlines
+    # Subtle lat/lon grid
     lon_ticks = np.arange(int(np.ceil(lon_min)), int(np.floor(lon_max)) + 1, 1)
     lat_ticks = np.arange(int(np.ceil(lat_min)), int(np.floor(lat_max)) + 1, 1)
     ax.set_xticks(lon_ticks)
     ax.set_yticks(lat_ticks)
-    ax.grid(True, color="white", linewidth=0.5, linestyle="--", alpha=0.6, zorder=5)
-    ax.tick_params(labelsize=7)
+    ax.grid(True, color="white", linewidth=0.3, linestyle="-", alpha=0.25, zorder=6)
+    ax.tick_params(labelsize=8, colors="white")
+    ax.xaxis.label.set_color("white")
+    ax.yaxis.label.set_color("white")
+    ax.title.set_color("white")
+    for spine in ax.spines.values():
+        spine.set_edgecolor("white")
+
+
+def _add_streamlines(ax: plt.Axes, u: np.ndarray, v: np.ndarray,
+                     longitudes: np.ndarray, latitudes: np.ndarray) -> None:
+    """
+    Overlay smooth white streamlines showing wind flow direction.
+    streamplot requires strictly increasing y (latitudes), so flip if needed.
+    """
+    if latitudes[0] > latitudes[-1]:
+        latitudes = latitudes[::-1]
+        u = u[::-1, :]
+        v = v[::-1, :]
+
+    speed = np.sqrt(u ** 2 + v ** 2)
+    speed_norm = speed / (speed.max() + 1e-6)  # 0-1 for linewidth scaling
+    ax.streamplot(
+        longitudes, latitudes, u, v,
+        color="white",
+        linewidth=0.6 + 1.4 * speed_norm,
+        density=1.8,
+        arrowsize=0.8,
+        arrowstyle="->",
+        zorder=7,
+    )
 
 
 def plot_prediction_maps(
@@ -235,10 +270,9 @@ def plot_prediction_maps(
     sample_index: int
 ) -> None:
     """
-    Plot true and predicted u10 / v10 maps over the Belgium domain.
-    - Shared symmetric color scale per variable for honest True vs Predicted comparison
-    - Diverging colormap (RdBu_r): blue = wind blowing west/south, red = east/north
-    - Quiver arrows showing wind direction and relative speed
+    Plot true and predicted wind speed (magnitude) side-by-side.
+    Style: dark background, viridis colormap, smooth bicubic rendering,
+    white streamlines for wind flow direction.
     """
     extent = [
         longitudes.min(), longitudes.max(),
@@ -250,73 +284,57 @@ def plot_prediction_maps(
     pred_u10 = y_pred[0]
     pred_v10 = y_pred[1]
 
-    # Symmetric color range shared between True and Predicted for each component
-    u_abs = max(abs(true_u10).max(), abs(pred_u10).max())
-    v_abs = max(abs(true_v10).max(), abs(pred_v10).max())
+    true_speed = np.sqrt(true_u10 ** 2 + true_v10 ** 2)
+    pred_speed = np.sqrt(pred_u10 ** 2 + pred_v10 ** 2)
 
-    # Quiver arrow grid — subsample so arrows don't overlap
-    lon_grid, lat_grid = np.meshgrid(longitudes, latitudes)
-    step = max(1, min(len(latitudes), len(longitudes)) // 8)
+    # Shared color range so both panels are comparable
+    vmax = max(true_speed.max(), pred_speed.max())
 
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    cmap = "RdBu_r"
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+    fig.patch.set_facecolor(_BG_COLOR)
+    cmap = "viridis"
 
-    for ax in axes.flat:
+    for ax in axes:
         add_map_background(ax, extent)
 
-    # --- True u10 ---
-    im0 = axes[0, 0].imshow(true_u10, origin="lower", extent=extent, aspect="auto",
-                             alpha=0.85, zorder=2, cmap=cmap, vmin=-u_abs, vmax=u_abs)
-    axes[0, 0].quiver(lon_grid[::step, ::step], lat_grid[::step, ::step],
-                      true_u10[::step, ::step], true_v10[::step, ::step],
-                      scale=60, width=0.004, color="k", zorder=6)
-    axes[0, 0].set_title("True u10", fontsize=12, fontweight="bold")
-    axes[0, 0].set_xlabel("Longitude")
-    axes[0, 0].set_ylabel("Latitude")
-    cb = plt.colorbar(im0, ax=axes[0, 0])
-    cb.set_label("m/s")
+    # --- True wind speed ---
+    im0 = axes[0].imshow(
+        true_speed, origin="lower", extent=extent, aspect="auto",
+        alpha=0.92, zorder=2, cmap=cmap, vmin=0, vmax=vmax,
+        interpolation="bicubic"
+    )
+    _add_streamlines(axes[0], true_u10, true_v10, longitudes, latitudes)
+    axes[0].set_title("True Wind Speed", fontsize=13, fontweight="bold", pad=8)
+    axes[0].set_xlabel("Longitude")
+    axes[0].set_ylabel("Latitude")
+    cb = plt.colorbar(im0, ax=axes[0], pad=0.02)
+    cb.set_label("m/s", color="white")
+    cb.ax.yaxis.set_tick_params(color="white")
+    plt.setp(cb.ax.yaxis.get_ticklabels(), color="white")
 
-    # --- Predicted u10 ---
-    im1 = axes[0, 1].imshow(pred_u10, origin="lower", extent=extent, aspect="auto",
-                             alpha=0.85, zorder=2, cmap=cmap, vmin=-u_abs, vmax=u_abs)
-    axes[0, 1].quiver(lon_grid[::step, ::step], lat_grid[::step, ::step],
-                      pred_u10[::step, ::step], pred_v10[::step, ::step],
-                      scale=60, width=0.004, color="k", zorder=6)
-    axes[0, 1].set_title("Predicted u10", fontsize=12, fontweight="bold")
-    axes[0, 1].set_xlabel("Longitude")
-    axes[0, 1].set_ylabel("Latitude")
-    cb = plt.colorbar(im1, ax=axes[0, 1])
-    cb.set_label("m/s")
+    # --- Predicted wind speed ---
+    im1 = axes[1].imshow(
+        pred_speed, origin="lower", extent=extent, aspect="auto",
+        alpha=0.92, zorder=2, cmap=cmap, vmin=0, vmax=vmax,
+        interpolation="bicubic"
+    )
+    _add_streamlines(axes[1], pred_u10, pred_v10, longitudes, latitudes)
+    axes[1].set_title("Predicted Wind Speed", fontsize=13, fontweight="bold", pad=8)
+    axes[1].set_xlabel("Longitude")
+    axes[1].set_ylabel("Latitude")
+    cb = plt.colorbar(im1, ax=axes[1], pad=0.02)
+    cb.set_label("m/s", color="white")
+    cb.ax.yaxis.set_tick_params(color="white")
+    plt.setp(cb.ax.yaxis.get_ticklabels(), color="white")
 
-    # --- True v10 ---
-    im2 = axes[1, 0].imshow(true_v10, origin="lower", extent=extent, aspect="auto",
-                             alpha=0.85, zorder=2, cmap=cmap, vmin=-v_abs, vmax=v_abs)
-    axes[1, 0].quiver(lon_grid[::step, ::step], lat_grid[::step, ::step],
-                      true_u10[::step, ::step], true_v10[::step, ::step],
-                      scale=60, width=0.004, color="k", zorder=6)
-    axes[1, 0].set_title("True v10", fontsize=12, fontweight="bold")
-    axes[1, 0].set_xlabel("Longitude")
-    axes[1, 0].set_ylabel("Latitude")
-    cb = plt.colorbar(im2, ax=axes[1, 0])
-    cb.set_label("m/s")
-
-    # --- Predicted v10 ---
-    im3 = axes[1, 1].imshow(pred_v10, origin="lower", extent=extent, aspect="auto",
-                             alpha=0.85, zorder=2, cmap=cmap, vmin=-v_abs, vmax=v_abs)
-    axes[1, 1].quiver(lon_grid[::step, ::step], lat_grid[::step, ::step],
-                      pred_u10[::step, ::step], pred_v10[::step, ::step],
-                      scale=60, width=0.004, color="k", zorder=6)
-    axes[1, 1].set_title("Predicted v10", fontsize=12, fontweight="bold")
-    axes[1, 1].set_xlabel("Longitude")
-    axes[1, 1].set_ylabel("Latitude")
-    cb = plt.colorbar(im3, ax=axes[1, 1])
-    cb.set_label("m/s")
-
-    fig.suptitle(f"Forecast Evaluation - Belgium - Sample {sample_index}", fontsize=14, fontweight="bold")
+    fig.suptitle(
+        f"Wind Speed Forecast — Belgium — Sample {sample_index}",
+        fontsize=15, fontweight="bold", color="white", y=1.01
+    )
     plt.tight_layout()
 
     output_path = output_dir / f"evaluation_sample_{sample_index}_belgium_only.png"
-    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    fig.savefig(output_path, dpi=200, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
 
     print(f"Saved prediction maps to: {output_path}")
@@ -338,48 +356,64 @@ def plot_error_maps(
         latitudes.min(), latitudes.max()
     ]
 
+    # Error in wind speed magnitude (single intuitive metric)
+    true_speed = np.sqrt(y_true[0] ** 2 + y_true[1] ** 2)
+    pred_speed = np.sqrt(y_pred[0] ** 2 + y_pred[1] ** 2)
+    speed_error = np.abs(pred_speed - true_speed)
+
     error_u10 = np.abs(y_pred[0] - y_true[0])
     error_v10 = np.abs(y_pred[1] - y_true[1])
 
-    # Shared color scale so both panels are directly comparable
-    error_max = max(error_u10.max(), error_v10.max())
+    # Shared color scale so all panels are directly comparable
+    error_max = max(speed_error.max(), error_u10.max(), error_v10.max())
 
-    # Quiver arrows showing true wind direction for spatial reference
-    lon_grid, lat_grid = np.meshgrid(longitudes, latitudes)
-    step = max(1, min(len(latitudes), len(longitudes)) // 8)
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    fig.patch.set_facecolor(_BG_COLOR)
 
     for ax in axes:
         add_map_background(ax, extent)
 
-    im0 = axes[0].imshow(error_u10, origin="lower", extent=extent, aspect="auto",
-                         alpha=0.85, zorder=2, cmap="YlOrRd", vmin=0, vmax=error_max)
-    axes[0].quiver(lon_grid[::step, ::step], lat_grid[::step, ::step],
-                   y_true[0][::step, ::step], y_true[1][::step, ::step],
-                   scale=60, width=0.004, color="k", zorder=6)
-    axes[0].set_title("Absolute Error - u10", fontsize=12, fontweight="bold")
+    cmap = "viridis"
+
+    im0 = axes[0].imshow(speed_error, origin="lower", extent=extent, aspect="auto",
+                         alpha=0.92, zorder=2, cmap=cmap, vmin=0, vmax=error_max,
+                         interpolation="bicubic")
+    axes[0].set_title("Wind Speed Error", fontsize=12, fontweight="bold")
     axes[0].set_xlabel("Longitude")
     axes[0].set_ylabel("Latitude")
-    cb = plt.colorbar(im0, ax=axes[0])
-    cb.set_label("m/s")
+    cb = plt.colorbar(im0, ax=axes[0], pad=0.02)
+    cb.set_label("m/s", color="white")
+    cb.ax.yaxis.set_tick_params(color="white")
+    plt.setp(cb.ax.yaxis.get_ticklabels(), color="white")
 
-    im1 = axes[1].imshow(error_v10, origin="lower", extent=extent, aspect="auto",
-                         alpha=0.85, zorder=2, cmap="YlOrRd", vmin=0, vmax=error_max)
-    axes[1].quiver(lon_grid[::step, ::step], lat_grid[::step, ::step],
-                   y_true[0][::step, ::step], y_true[1][::step, ::step],
-                   scale=60, width=0.004, color="k", zorder=6)
-    axes[1].set_title("Absolute Error - v10", fontsize=12, fontweight="bold")
+    im1 = axes[1].imshow(error_u10, origin="lower", extent=extent, aspect="auto",
+                         alpha=0.92, zorder=2, cmap=cmap, vmin=0, vmax=error_max,
+                         interpolation="bicubic")
+    axes[1].set_title("Absolute Error — u10", fontsize=12, fontweight="bold")
     axes[1].set_xlabel("Longitude")
     axes[1].set_ylabel("Latitude")
-    cb = plt.colorbar(im1, ax=axes[1])
-    cb.set_label("m/s")
+    cb = plt.colorbar(im1, ax=axes[1], pad=0.02)
+    cb.set_label("m/s", color="white")
+    cb.ax.yaxis.set_tick_params(color="white")
+    plt.setp(cb.ax.yaxis.get_ticklabels(), color="white")
 
-    fig.suptitle(f"Error Maps - Belgium - Sample {sample_index}", fontsize=14, fontweight="bold")
+    im2 = axes[2].imshow(error_v10, origin="lower", extent=extent, aspect="auto",
+                         alpha=0.92, zorder=2, cmap=cmap, vmin=0, vmax=error_max,
+                         interpolation="bicubic")
+    axes[2].set_title("Absolute Error — v10", fontsize=12, fontweight="bold")
+    axes[2].set_xlabel("Longitude")
+    axes[2].set_ylabel("Latitude")
+    cb = plt.colorbar(im2, ax=axes[2], pad=0.02)
+    cb.set_label("m/s", color="white")
+    cb.ax.yaxis.set_tick_params(color="white")
+    plt.setp(cb.ax.yaxis.get_ticklabels(), color="white")
+
+    fig.suptitle(f"Error Maps — Belgium — Sample {sample_index}",
+                 fontsize=14, fontweight="bold", color="white", y=1.01)
     plt.tight_layout()
 
     output_path = output_dir / f"error_maps_sample_{sample_index}_belgium_only.png"
-    fig.savefig(output_path, dpi=200, bbox_inches="tight")
+    fig.savefig(output_path, dpi=200, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
 
     print(f"Saved error maps to: {output_path}")
