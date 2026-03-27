@@ -4,6 +4,9 @@ import numpy as np
 import xarray as xr
 import torch
 from torch.utils.data import Dataset
+import re
+import torch
+import torch.utils.data as data
 
 def extract_forecast_hour(file_path):
     match = re.search(r"\.f(\d{3})_belgium\.nc$", file_path.name)
@@ -108,7 +111,7 @@ if __name__ == "__main__":
     project_root = Path(__file__).resolve().parent.parent
     processed_dir = project_root / "data" / "processed"
 
-    data, files = load_wind_time_series(processed_dir)
+    data, files, latitudes, longitudes = load_wind_time_series(processed_dir)
 
     dataset = WindForecastDataset(data, input_steps=4, target_offset=1)
 
@@ -119,3 +122,5 @@ if __name__ == "__main__":
         print("Target y shape:", y.shape)
     else:
         print("\nNo samples could be created.")
+
+

@@ -11,7 +11,7 @@ CYCLE = "00"
 # Forecast hours (every 6 hours)
 FORECAST_HOURS = ["000", "006", "012", "018", "024"]
 
-# Always point to the real project root
+# Always point to the  project root
 project_root = Path(__file__).resolve().parent.parent
 
 # Save into weather-ml-project/data/raw
