@@ -7,6 +7,7 @@ import re
 import torch
 from torch.utils.data import Dataset
 import torch.nn as nn
+from torch.utils.data import DataLoader, random_split
 
 
 
@@ -245,3 +246,28 @@ class SimpleWindCNN(nn.Module):
 #__________________________________________________________________________________#   Test the model architecture                                                        #
 #        TRAIN DATA
 #__________________________________________________________________________________#
+
+
+# Confugurations
+INPUT_STEPS = 2 #how many past time steps
+TARGET_OFFSET = 1 # how far in the future to predict
+TRAIN_RATIO = 0.8 # training percentage
+BATCH_SIZE = 4 # samples per step
+LEARNING_RATE = 1e-3 #spead of learnig
+NUM_EPOCHS = 10 #number of training iterations
+MODEL_FILE = project_root / "outputs" / "models" / "best_model.pth"
+
+
+def get_device():
+    if torch.backends.mps.is_available():
+        print("Using Apple GPU with MPS.")
+        return torch.device("mps")
+
+    if torch.cuda.is_available():
+        gpu_name = torch.cuda.get_device_name(0)
+        print(f"Using NVIDIA GPU: {gpu_name}")
+        return torch.device("cuda")
+
+    print("No GPU available. Using CPU.")
+    return torch.device("cpu")
+

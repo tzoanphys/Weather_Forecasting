@@ -22,9 +22,10 @@ def load_wind_time_series(processed_dir):
     for f in all_files:
         print("  ", f.name)
 
+    # Sort by filename: YYYYMMDD comes before fHHH so alphabetical = chronological
     files = sorted(
-        processed_dir.glob("gfs.t00z.pgrb2.0p25.f*_belgium.nc"),
-        key=extract_forecast_hour
+        processed_dir.glob("gfs.????????.t00z.pgrb2.0p25.f*_belgium.nc"),
+        key=lambda p: p.name
     )
 
     print("\nMatching processed wind files:")

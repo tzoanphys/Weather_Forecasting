@@ -9,7 +9,7 @@ raw_dir = project_root / "data" / "raw"
 processed_dir = project_root / "data" / "processed"
 processed_dir.mkdir(parents=True, exist_ok=True)
 
-raw_files = sorted(raw_dir.glob("gfs.t00z.pgrb2.0p25.f*"))
+raw_files = sorted(raw_dir.glob("gfs.????????.t00z.pgrb2.0p25.f*"))
 
 print(f"Found {len(raw_files)} raw files.")
 
