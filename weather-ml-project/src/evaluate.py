@@ -8,8 +8,34 @@ import numpy as np
 import torch
 
 from model import BetterWindCNN
-from dataset import WindForecastDataset
-from train import get_device, build_dataset, MODEL_FILENAME
+from dataset import WindForecastDataset, load_wind_time_series
+
+INPUT_STEPS    = 2
+TARGET_OFFSET  = 1
+MODEL_FILENAME = "wind_forecast_cnn.pth"
+
+
+def get_device() -> torch.device:
+    if torch.backends.mps.is_available():
+        print("Using Apple GPU")
+        return torch.device("mps")
+    if torch.cuda.is_available():
+        print(f"Using NVIDIA GPU: {torch.cuda.get_device_name(0)}")
+        return torch.device("cuda")
+    print("Using CPU")
+    return torch.device("cpu")
+
+
+def build_dataset(processed_dir: Path):
+    data, _, latitudes, longitudes = load_wind_time_series(processed_dir)
+    dataset = WindForecastDataset(
+        data=data,
+        input_steps=INPUT_STEPS,
+        target_offset=TARGET_OFFSET,
+    )
+    print(f"\nStacked time-series shape:\n{data.shape}")
+    print(f"\nNumber of dataset samples created:\n{len(dataset)}")
+    return dataset, latitudes, longitudes
 
 
 # ============================================================

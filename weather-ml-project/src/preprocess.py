@@ -24,55 +24,59 @@ for raw_file in raw_files:
     print("\n" + "-" * 60)
     print(f"Loading data from: {raw_file}")
 
-    wind_ds = xr.open_dataset(
-        raw_file,
-        engine="cfgrib",
-        backend_kwargs={
-            "filter_by_keys": {
-                "typeOfLevel": "heightAboveGround",
-                "level": 10,
-            },
-            "indexpath": ""
-        }
-    )
-
-    print("Opened 10 m wind dataset.")
-
-    if "u10" not in wind_ds.data_vars or "v10" not in wind_ds.data_vars:
-        print(f"Skipping {raw_file.name}: u10/v10 not found.")
-        continue
-
-    belgium_ds = wind_ds.sel(
-        longitude=slice(2, 7),
-        latitude=slice(52, 49)
-    )
-
-    print("Belgium subset created.")
-
-    if "time" in belgium_ds.coords:
-        belgium_ds = belgium_ds.assign_coords(
-            time=belgium_ds.time.astype("datetime64[s]")
+    try:
+        wind_ds = xr.open_dataset(
+            raw_file,
+            engine="cfgrib",
+            backend_kwargs={
+                "filter_by_keys": {
+                    "typeOfLevel": "heightAboveGround",
+                    "level": 10,
+                },
+                "indexpath": ""
+            }
         )
 
-    if "valid_time" in belgium_ds.coords:
-        belgium_ds = belgium_ds.assign_coords(
-            valid_time=belgium_ds.valid_time.astype("datetime64[s]")
+        print("Opened 10 m wind dataset.")
+
+        if "u10" not in wind_ds.data_vars or "v10" not in wind_ds.data_vars:
+            print(f"Skipping {raw_file.name}: u10/v10 not found.")
+            continue
+
+        belgium_ds = wind_ds.sel(
+            longitude=slice(2, 7),
+            latitude=slice(52, 49)
         )
 
-    if "step" in belgium_ds.coords:
-        belgium_ds = belgium_ds.assign_coords(
-            step=belgium_ds.step.astype("timedelta64[s]")
-        )
+        print("Belgium subset created.")
 
-    for var_name in belgium_ds.data_vars:
-        belgium_ds[var_name].attrs = {}
+        if "time" in belgium_ds.coords:
+            belgium_ds = belgium_ds.assign_coords(
+                time=belgium_ds.time.astype("datetime64[s]")
+            )
 
-    belgium_ds.attrs = {}
+        if "valid_time" in belgium_ds.coords:
+            belgium_ds = belgium_ds.assign_coords(
+                valid_time=belgium_ds.valid_time.astype("datetime64[s]")
+            )
 
-    output_file = processed_dir / f"{raw_file.name}_belgium.nc"
-    belgium_ds.to_netcdf(output_file, engine="netcdf4")
+        if "step" in belgium_ds.coords:
+            belgium_ds = belgium_ds.assign_coords(
+                step=belgium_ds.step.astype("timedelta64[s]")
+            )
 
-    print(f"Saved processed dataset to: {output_file}")
-    print(f"File size: {output_file.stat().st_size / (1024**2):.2f} MB")
+        for var_name in belgium_ds.data_vars:
+            belgium_ds[var_name].attrs = {}
+
+        belgium_ds.attrs = {}
+
+        output_file = processed_dir / f"{raw_file.name}_belgium.nc"
+        belgium_ds.to_netcdf(output_file, engine="netcdf4")
+
+        print(f"Saved processed dataset to: {output_file}")
+        print(f"File size: {output_file.stat().st_size / (1024**2):.2f} MB")
+
+    except Exception as e:
+        print(f"Skipping {raw_file.name}: error during processing ({e})")
 
 print("\nAll preprocessing finished.")

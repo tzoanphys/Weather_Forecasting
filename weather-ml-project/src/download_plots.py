@@ -7,10 +7,15 @@ import matplotlib.pyplot as plt
 # Paths
 # -----------------------------------------
 project_root = Path(__file__).resolve().parent.parent
-input_file = project_root / "data" / "processed" / "belgium_wind_subset.nc"
+processed_dir = project_root / "data" / "processed"
 figures_dir = project_root / "outputs" / "figures"
 figures_dir.mkdir(parents=True, exist_ok=True)
 
+belgium_files = sorted(processed_dir.glob("*_belgium.nc"))
+if not belgium_files:
+    raise FileNotFoundError(f"No *_belgium.nc files found in {processed_dir}. Run preprocess.py first.")
+
+input_file = belgium_files[0]
 print(f"Loading processed dataset from: {input_file}")
 
 # -----------------------------------------

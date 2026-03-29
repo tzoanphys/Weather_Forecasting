@@ -30,6 +30,8 @@ headers = {
 # -----------------------------------------
 # Download loop
 # -----------------------------------------
+MIN_FILE_SIZE = 100 * 1024 * 1024  # 100 MB — GFS global files are 300-500 MB
+
 for date in DATES:
     for forecast in FORECAST_HOURS:
 
@@ -38,28 +40,37 @@ for date in DATES:
         noaa_name   = f"gfs.t{CYCLE}z.pgrb2.0p25.f{forecast}"
         url         = f"https://noaa-gfs-bdp-pds.s3.amazonaws.com/gfs.{date}/{CYCLE}/atmos/{noaa_name}"
         output_path = output_dir / filename
+        tmp_path    = output_path.with_suffix(".tmp")
 
         print("\n----------------------------------------")
         print(f"Downloading: {filename}")
 
         if output_path.exists():
-            print(f"Already exists, skipping: {output_path}")
-            continue
+            if output_path.stat().st_size >= MIN_FILE_SIZE:
+                print(f"Already exists, skipping: {output_path}")
+                continue
+            else:
+                print(f"Existing file too small ({output_path.stat().st_size / (1024**2):.1f} MB), re-downloading.")
+                output_path.unlink()
 
         try:
             with requests.get(url, headers=headers, stream=True, timeout=60) as response:
                 response.raise_for_status()
 
-                with open(output_path, "wb") as f:
+                with open(tmp_path, "wb") as f:
                     for chunk in response.iter_content(chunk_size=1024 * 1024):
                         if chunk:
                             f.write(chunk)
 
+            tmp_path.rename(output_path)
             print("Download complete.")
             print(f"Saved to: {output_path}")
             print(f"Size: {output_path.stat().st_size / (1024**2):.2f} MB")
 
         except Exception as e:
             print(f"Failed to download {filename}: {e}")
+            if tmp_path.exists():
+                tmp_path.unlink()
+                print(f"Deleted incomplete temp file.")
 
 print("\nAll downloads finished.")
