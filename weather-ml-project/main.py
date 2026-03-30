@@ -50,11 +50,11 @@ def main() -> None:
     # 1 ─ Download raw GFS data ----------------------------------------
     _run_script("STEP 1 — Download raw GFS data", SRC / "download_gfs.py")
 
-    # 2 ─ Exploratory plots --------------------------------------------
-    _run_script("STEP 2 — Generate EDA wind plots", SRC / "download_plots.py")
+    # 2 ─ Preprocess ---------------------------------------------------
+    _run_script("STEP 2 — Preprocess GRIB2 → Belgium NetCDF", SRC / "preprocess.py")
 
-    # 3 ─ Preprocess ---------------------------------------------------
-    _run_script("STEP 3 — Preprocess GRIB2 → Belgium NetCDF", SRC / "preprocess.py")
+    # 3 ─ Exploratory plots --------------------------------------------
+    _run_script("STEP 3 — Generate EDA wind plots", SRC / "download_plots.py")
 
     # 4 ─ Dataset summary ----------------------------------------------
     _banner("STEP 4 — Dataset summary")
@@ -79,9 +79,7 @@ def main() -> None:
     print(preview_model)
 
     # 6 ─ Train --------------------------------------------------------
-    _banner("STEP 6 — Train")
-    from train import train_model
-    train_model()
+    _run_script("STEP 6 — Train", SRC / "train.py")
 
     # 7 ─ Evaluate -----------------------------------------------------
     _banner("STEP 7 — Evaluate")
