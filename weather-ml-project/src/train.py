@@ -2,7 +2,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Subset
 
 from model import BetterWindCNN
 from dataset import load_wind_time_series, WindForecastDataset
@@ -66,18 +66,25 @@ print("Number of samples in dataset:", len(dataset))
 # -----------------------------
 # ️️📊 Split data
 # -----------------------------
-train_size = int(TRAIN_RATIO * len(dataset)) #how many samples are created 
-val_size = len(dataset) - train_size # the rest of validation
+if len(dataset) < 2:
+    raise ValueError("Need at least 2 samples to create train/validation splits.")
+
+train_size = int(TRAIN_RATIO * len(dataset))
 
 if train_size == 0:
     train_size = 1
-    val_size = len(dataset) - 1
 
-if val_size == 0:
-    val_size = 1
+if train_size == len(dataset):
     train_size = len(dataset) - 1
 
-train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+val_size = len(dataset) - train_size
+
+# Chronological split for forecasting: train on earlier samples, validate on later samples.
+train_indices = list(range(0, train_size))
+val_indices = list(range(train_size, len(dataset)))
+
+train_dataset = Subset(dataset, train_indices)
+val_dataset = Subset(dataset, val_indices)
 
 train_loader = DataLoader(train_dataset, batch_size=min(BATCH_SIZE, len(train_dataset)), shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=min(BATCH_SIZE, len(val_dataset)), shuffle=False)

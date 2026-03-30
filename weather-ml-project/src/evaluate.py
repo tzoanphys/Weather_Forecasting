@@ -16,9 +16,6 @@ MODEL_FILENAME = "wind_forecast_cnn.pth"
 
 
 def get_device() -> torch.device:
-    if torch.backends.mps.is_available():
-        print("Using Apple GPU")
-        return torch.device("mps")
     if torch.cuda.is_available():
         print(f"Using NVIDIA GPU: {torch.cuda.get_device_name(0)}")
         return torch.device("cuda")
