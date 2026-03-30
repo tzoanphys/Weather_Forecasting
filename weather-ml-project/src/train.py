@@ -16,7 +16,9 @@ TARGET_OFFSET = 1 # predict one stp in the future
 TRAIN_RATIO = 0.8
 BATCH_SIZE = 4 # the model sees 4 batches each time
 LEARNING_RATE = 0.001
-NUM_EPOCHS = 20
+NUM_EPOCHS = 60
+EARLY_STOPPING_PATIENCE = 10  # stop if val loss does not improve for this many epochs
+WEIGHT_DECAY = 1e-4           # L2 regularisation to reduce overfitting
 MODEL_FILENAME = "wind_forecast_cnn.pth"
 
 
@@ -115,13 +117,17 @@ model = BetterWindCNN(
 # ⚖️ Loss and optimizer
 # -----------------------------
 criterion = nn.MSELoss() # choose the loss function, MSE (mean squared error) is common for regression problems 
-optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE) # optimizer to update the weights of the model based on the computed gradients.
-                                                                # Adam is a popular choice for training deep learning models
+optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
 
 # -----------------------------
 # 🚀 Training loop
 # -----------------------------
+best_val_loss = float("inf")
+best_epoch = 0
+no_improve_count = 0
+best_model_path = model_dir / MODEL_FILENAME
+
 for epoch in range(NUM_EPOCHS):
     model.train()
     train_loss = 0.0
@@ -157,15 +163,26 @@ for epoch in range(NUM_EPOCHS):
             val_loss += loss.item()
 
     val_loss = val_loss / len(val_loader)
-    ratio=val_loss/train_loss if train_loss > 0 else float('inf')
-    print(f"Epoch {epoch+1}/{NUM_EPOCHS} - Train Loss: {train_loss:.6f} - Val Loss: {val_loss:.6f} - Ratio: {ratio:.4f}")
+    ratio = val_loss / train_loss if train_loss > 0 else float("inf")
+
+    # Save best checkpoint
+    if val_loss < best_val_loss:
+        best_val_loss = val_loss
+        best_epoch = epoch + 1
+        no_improve_count = 0
+        torch.save(model.state_dict(), best_model_path)
+        marker = "  ✓ best"
+    else:
+        no_improve_count += 1
+        marker = ""
+
+    print(f"Epoch {epoch+1}/{NUM_EPOCHS} - Train Loss: {train_loss:.6f} - Val Loss: {val_loss:.6f} - Ratio: {ratio:.4f}{marker}")
+
+    # Early stopping
+    if no_improve_count >= EARLY_STOPPING_PATIENCE:
+        print(f"\nEarly stopping at epoch {epoch+1}. No improvement for {EARLY_STOPPING_PATIENCE} epochs.")
+        break
 
 
-# -----------------------------
-# 🗃️ Save model
-# -----------------------------
-model_path = model_dir / MODEL_FILENAME
-torch.save(model.state_dict(), model_path)
-
-print("Training finished.")
-print("Model saved at:", model_path)
+print(f"\nTraining finished. Best val loss: {best_val_loss:.6f} at epoch {best_epoch}.")
+print(f"Best model saved at: {best_model_path}")

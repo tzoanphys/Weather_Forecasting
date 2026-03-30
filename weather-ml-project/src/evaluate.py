@@ -39,7 +39,7 @@ def build_dataset(processed_dir: Path):
 # Configuration
 # ============================================================
 
-SAMPLE_INDEX = 0
+TRAIN_RATIO  = 0.8   # must match train.py
 
 
 # ============================================================
@@ -343,6 +343,35 @@ def plot_error_maps(
     print(f"Saved error maps to: {output_path}")
 
 # ============================================================
+# Bulk validation evaluation
+# ============================================================
+
+def evaluate_validation_set(
+    model: BetterWindCNN,
+    dataset: WindForecastDataset,
+    device: torch.device,
+) -> tuple[list[float], list[float], int]:
+    """
+    Run inference on every validation sample (chronological split)
+    and return per-sample MSE list, MAE list, and the first val index.
+    """
+    n = len(dataset)
+    train_size = int(TRAIN_RATIO * n)
+    if train_size == n:
+        train_size = n - 1
+    val_indices = list(range(train_size, n))
+
+    mse_list, mae_list = [], []
+    for idx in val_indices:
+        y_true, y_pred = predict_one_sample(model, dataset, idx, device)
+        mse, mae = compute_metrics(y_true, y_pred)
+        mse_list.append(mse)
+        mae_list.append(mae)
+
+    return mse_list, mae_list, val_indices[0]
+
+
+# ============================================================
 # Main
 # ============================================================
 
@@ -357,32 +386,43 @@ def main() -> None:
     dataset, latitudes, longitudes = build_dataset(processed_dir)
     model = load_model(model_path, dataset, device)
 
-    y_true, y_pred = predict_one_sample(
-        model=model,
-        dataset=dataset,
-        sample_index=SAMPLE_INDEX,
-        device=device
-    )
+    # ----------------------------------------------------------
+    # Aggregate metrics over all validation samples
+    # ----------------------------------------------------------
+    print("\nEvaluating all validation samples...")
+    mse_list, mae_list, first_val_idx = evaluate_validation_set(model, dataset, device)
 
-    mse, mae = compute_metrics(y_true, y_pred)
+    mse_arr = np.array(mse_list)
+    mae_arr = np.array(mae_list)
 
-    print(f"\nEvaluating sample index : {SAMPLE_INDEX}")
-    print(f"True target shape       : {y_true.shape}")
-    print(f"Pred target shape       : {y_pred.shape}")
-    print(f"MSE                     : {mse:.6f}")
-    print(f"MAE                     : {mae:.6f}")
+    print(f"\nValidation samples evaluated : {len(mse_list)}")
+    print(f"MSE  — mean : {mse_arr.mean():.4f}  std : {mse_arr.std():.4f}  "
+          f"min : {mse_arr.min():.4f}  max : {mse_arr.max():.4f}")
+    print(f"MAE  — mean : {mae_arr.mean():.4f}  std : {mae_arr.std():.4f}  "
+          f"min : {mae_arr.min():.4f}  max : {mae_arr.max():.4f}")
 
-    plot_prediction_maps(
-        y_true=y_true, y_pred=y_pred,
-        latitudes=latitudes, longitudes=longitudes,
-        output_dir=output_dir, sample_index=SAMPLE_INDEX
-    )
+    # Worst and best sample indices (relative to full dataset)
+    best_idx  = first_val_idx + int(np.argmin(mse_arr))
+    worst_idx = first_val_idx + int(np.argmax(mse_arr))
+    print(f"Best  sample (lowest  MSE): dataset index {best_idx}")
+    print(f"Worst sample (highest MSE): dataset index {worst_idx}")
 
-    plot_error_maps(
-        y_true=y_true, y_pred=y_pred,
-        latitudes=latitudes, longitudes=longitudes,
-        output_dir=output_dir, sample_index=SAMPLE_INDEX
-    )
+    # ----------------------------------------------------------
+    # Plot maps for the best and worst validation samples
+    # ----------------------------------------------------------
+    for label, idx in [("best", best_idx), ("worst", worst_idx)]:
+        y_true, y_pred = predict_one_sample(model, dataset, idx, device)
+        plot_prediction_maps(
+            y_true=y_true, y_pred=y_pred,
+            latitudes=latitudes, longitudes=longitudes,
+            output_dir=output_dir, sample_index=idx
+        )
+        plot_error_maps(
+            y_true=y_true, y_pred=y_pred,
+            latitudes=latitudes, longitudes=longitudes,
+            output_dir=output_dir, sample_index=idx
+        )
+        print(f"Plots saved for {label} sample (index {idx}).")
 
 
 if __name__ == "__main__":
