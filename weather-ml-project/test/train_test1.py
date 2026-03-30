@@ -19,7 +19,7 @@ TARGET_OFFSET =1 # predict the 1 step in the future
 TRAIN_RATIO =0.8 # training rate
 BATCH_SIZE=4 #the model sees 4 samples at a time before updating itself
 LEARNING_RATE=0.001# the correction steps are (big value leads to faster but unstable solutions)
-NUM_EPOCHS=20 # the model will go through the whole trainning dataset 20 times
+NUM_EPOCHS=100 # the model will go through the whole trainning dataset 20 times
 MODEL_FILENAME= "wind_forecast_cnn.pth"
 
 
