@@ -60,3 +60,110 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.14);
   background: rgba(255, 255, 255, 0.06);
 }
+
+.pill--good {
+  border-color: rgba(110, 255, 160, 0.3);
+  background: rgba(110, 255, 160, 0.12);
+}
+
+.pill--warn {
+  border-color: rgba(255, 220, 120, 0.35);
+  background: rgba(255, 220, 120, 0.12);
+}
+
+.pill--bad {
+  border-color: rgba(255, 120, 120, 0.35);
+  background: rgba(255, 120, 120, 0.12);
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: #eaf0ff;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+}
+
+.btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.section__title {
+  font-size: 12px;
+  letter-spacing: 0.18px;
+  text-transform: uppercase;
+  color: rgba(234, 240, 255, 0.65);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 860px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.stat {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+
+.stat__k {
+  font-size: 12px;
+  color: rgba(234, 240, 255, 0.7);
+}
+
+.stat__v {
+  margin-top: 4px;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.callout {
+  margin-top: 8px;
+  border-radius: 14px;
+  padding: 12px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.callout__title {
+  font-weight: 750;
+}
+
+.callout__list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: rgba(234, 240, 255, 0.75);
+}
+
+.callout--good {
+  border-color: rgba(110, 255, 160, 0.22);
+  background: rgba(110, 255, 160, 0.08);
+}
+
+.callout--warn {
+  border-color: rgba(255, 220, 120, 0.24);
+  background: rgba(255, 220, 120, 0.08);
+}
+
+.callout--bad {
+  border-color: rgba(255, 120, 120, 0.24);
+  background: rgba(255, 120, 120, 0.08);
+}

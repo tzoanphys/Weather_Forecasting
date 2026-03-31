@@ -1,0 +1,26 @@
+{
+  "train_ratio": 0.8,
+  "num_validation_samples": 107,
+  "mse": {
+    "mean": 3.75811505317688,
+    "std": 3.63323712348938,
+    "min": 0.2760935425758362,
+    "max": 16.411535263061523
+  },
+  "mae": {
+    "mean": 1.3671910762786865,
+    "std": 0.6966630220413208,
+    "min": 0.40024855732917786,
+    "max": 3.309905767440796
+  },
+  "best": {
+    "dataset_index": 484,
+    "evaluation_image": "evaluation_sample_484_belgium_only.png",
+    "error_map_image": "error_maps_sample_484_belgium_only.png"
+  },
+  "worst": {
+    "dataset_index": 450,
+    "evaluation_image": "evaluation_sample_450_belgium_only.png",
+    "error_map_image": "error_maps_sample_450_belgium_only.png"
+  }
+}

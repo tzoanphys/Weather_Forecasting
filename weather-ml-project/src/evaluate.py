@@ -1,6 +1,7 @@
 from pathlib import Path
 import urllib.request
 import zipfile
+import json
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -407,6 +408,33 @@ def main() -> None:
     print(f"Best  sample (lowest  MSE): dataset index {best_idx}")
     print(f"Worst sample (highest MSE): dataset index {worst_idx}")
 
+    summary = {
+        "train_ratio": float(TRAIN_RATIO),
+        "num_validation_samples": int(len(mse_list)),
+        "mse": {
+            "mean": float(mse_arr.mean()),
+            "std": float(mse_arr.std()),
+            "min": float(mse_arr.min()),
+            "max": float(mse_arr.max()),
+        },
+        "mae": {
+            "mean": float(mae_arr.mean()),
+            "std": float(mae_arr.std()),
+            "min": float(mae_arr.min()),
+            "max": float(mae_arr.max()),
+        },
+        "best": {
+            "dataset_index": int(best_idx),
+            "evaluation_image": f"evaluation_sample_{best_idx}_belgium_only.png",
+            "error_map_image": f"error_maps_sample_{best_idx}_belgium_only.png",
+        },
+        "worst": {
+            "dataset_index": int(worst_idx),
+            "evaluation_image": f"evaluation_sample_{worst_idx}_belgium_only.png",
+            "error_map_image": f"error_maps_sample_{worst_idx}_belgium_only.png",
+        },
+    }
+
     # ----------------------------------------------------------
     # Plot maps for the best and worst validation samples
     # ----------------------------------------------------------
@@ -423,6 +451,10 @@ def main() -> None:
             output_dir=output_dir, sample_index=idx
         )
         print(f"Plots saved for {label} sample (index {idx}).")
+
+    summary_path = output_dir / "evaluation_summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(f"Saved evaluation summary to: {summary_path}")
 
 
 if __name__ == "__main__":
