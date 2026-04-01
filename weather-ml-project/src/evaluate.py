@@ -146,6 +146,25 @@ def _load_natural_earth_countries() -> gpd.GeoDataFrame:
 # Dark navy background matching professional NWP style
 _BG_COLOR = "#0b0e1a"
 
+# Larger typography for readability in exported PNGs (dashboard viewing)
+_MAP_TICK_FONTSIZE = 18
+_MAP_LABEL_FONTSIZE = 24
+_MAP_TITLE_FONTSIZE = 26
+_MAP_SUPTITLE_FONTSIZE = 30
+_CB_LABEL_FONTSIZE = 20
+_CB_TICK_FONTSIZE = 18
+
+# Also raise default matplotlib fonts as a baseline.
+plt.rcParams.update(
+    {
+        "font.size": 22,
+        "axes.titlesize": _MAP_TITLE_FONTSIZE,
+        "axes.labelsize": _MAP_LABEL_FONTSIZE,
+        "xtick.labelsize": _MAP_TICK_FONTSIZE,
+        "ytick.labelsize": _MAP_TICK_FONTSIZE,
+    }
+)
+
 
 def add_map_background(ax: plt.Axes, extent: list) -> None:
     """
@@ -180,7 +199,7 @@ def add_map_background(ax: plt.Axes, extent: list) -> None:
     ax.set_xticks(lon_ticks)
     ax.set_yticks(lat_ticks)
     ax.grid(True, color="white", linewidth=0.3, linestyle="-", alpha=0.25, zorder=6)
-    ax.tick_params(labelsize=8, colors="white")
+    ax.tick_params(labelsize=_MAP_TICK_FONTSIZE, colors="white")
     ax.xaxis.label.set_color("white")
     ax.yaxis.label.set_color("white")
     ax.title.set_color("white")
@@ -241,7 +260,7 @@ def plot_prediction_maps(
     # Shared color range so both panels are comparable
     vmax = max(true_speed.max(), pred_speed.max())
 
-    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+    fig, axes = plt.subplots(1, 2, figsize=(18, 8))
     fig.patch.set_facecolor(_BG_COLOR)
     cmap = "viridis"
 
@@ -255,12 +274,12 @@ def plot_prediction_maps(
         interpolation="bicubic"
     )
     _add_streamlines(axes[0], true_u10, true_v10, longitudes, latitudes)
-    axes[0].set_title("True Wind Speed", fontsize=13, fontweight="bold", pad=8)
-    axes[0].set_xlabel("Longitude")
-    axes[0].set_ylabel("Latitude")
+    axes[0].set_title("True Wind Speed", fontsize=_MAP_TITLE_FONTSIZE, fontweight="bold", pad=12)
+    axes[0].set_xlabel("Longitude", fontsize=_MAP_LABEL_FONTSIZE)
+    axes[0].set_ylabel("Latitude", fontsize=_MAP_LABEL_FONTSIZE)
     cb = plt.colorbar(im0, ax=axes[0], pad=0.02)
-    cb.set_label("m/s", color="white")
-    cb.ax.yaxis.set_tick_params(color="white")
+    cb.set_label("m/s", color="white", fontsize=_CB_LABEL_FONTSIZE)
+    cb.ax.yaxis.set_tick_params(color="white", labelsize=_CB_TICK_FONTSIZE)
     plt.setp(cb.ax.yaxis.get_ticklabels(), color="white")
 
     # --- Predicted wind speed ---
@@ -270,22 +289,22 @@ def plot_prediction_maps(
         interpolation="bicubic"
     )
     _add_streamlines(axes[1], pred_u10, pred_v10, longitudes, latitudes)
-    axes[1].set_title("Predicted Wind Speed", fontsize=13, fontweight="bold", pad=8)
-    axes[1].set_xlabel("Longitude")
-    axes[1].set_ylabel("Latitude")
+    axes[1].set_title("Predicted Wind Speed", fontsize=_MAP_TITLE_FONTSIZE, fontweight="bold", pad=12)
+    axes[1].set_xlabel("Longitude", fontsize=_MAP_LABEL_FONTSIZE)
+    axes[1].set_ylabel("Latitude", fontsize=_MAP_LABEL_FONTSIZE)
     cb = plt.colorbar(im1, ax=axes[1], pad=0.02)
-    cb.set_label("m/s", color="white")
-    cb.ax.yaxis.set_tick_params(color="white")
+    cb.set_label("m/s", color="white", fontsize=_CB_LABEL_FONTSIZE)
+    cb.ax.yaxis.set_tick_params(color="white", labelsize=_CB_TICK_FONTSIZE)
     plt.setp(cb.ax.yaxis.get_ticklabels(), color="white")
 
     fig.suptitle(
         f"Wind Speed Forecast — Belgium — Sample {sample_index}",
-        fontsize=15, fontweight="bold", color="white", y=1.01
+        fontsize=_MAP_SUPTITLE_FONTSIZE, fontweight="bold", color="white", y=1.02
     )
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
 
     output_path = output_dir / f"evaluation_sample_{sample_index}_belgium_only.png"
-    fig.savefig(output_path, dpi=200, bbox_inches="tight", facecolor=fig.get_facecolor())
+    fig.savefig(output_path, dpi=300, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
 
     print(f"Saved prediction maps to: {output_path}")
@@ -314,7 +333,7 @@ def plot_error_maps(
     ]
     error_max = max(d.max() for d, _ in panels)
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    fig, axes = plt.subplots(1, 3, figsize=(20, 7))
     fig.patch.set_facecolor(_BG_COLOR)
 
     for ax, (data, title) in zip(axes, panels):
@@ -324,22 +343,22 @@ def plot_error_maps(
             alpha=0.92, zorder=2, cmap="viridis", vmin=0, vmax=error_max,
             interpolation="bicubic"
         )
-        ax.set_title(title, fontsize=12, fontweight="bold")
-        ax.set_xlabel("Longitude")
-        ax.set_ylabel("Latitude")
+        ax.set_title(title, fontsize=_MAP_TITLE_FONTSIZE, fontweight="bold", pad=10)
+        ax.set_xlabel("Longitude", fontsize=_MAP_LABEL_FONTSIZE)
+        ax.set_ylabel("Latitude", fontsize=_MAP_LABEL_FONTSIZE)
         cb = plt.colorbar(im, ax=ax, pad=0.02)
-        cb.set_label("m/s", color="white")
-        cb.ax.yaxis.set_tick_params(color="white")
+        cb.set_label("m/s", color="white", fontsize=_CB_LABEL_FONTSIZE)
+        cb.ax.yaxis.set_tick_params(color="white", labelsize=_CB_TICK_FONTSIZE)
         plt.setp(cb.ax.yaxis.get_ticklabels(), color="white")
 
     fig.suptitle(
         f"Error Maps — Belgium — Sample {sample_index}",
-        fontsize=14, fontweight="bold", color="white", y=1.01
+        fontsize=_MAP_SUPTITLE_FONTSIZE - 1, fontweight="bold", color="white", y=1.02
     )
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
 
     output_path = output_dir / f"error_maps_sample_{sample_index}_belgium_only.png"
-    fig.savefig(output_path, dpi=200, bbox_inches="tight", facecolor=fig.get_facecolor())
+    fig.savefig(output_path, dpi=300, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
     print(f"Saved error maps to: {output_path}")
 
