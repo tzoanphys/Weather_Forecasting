@@ -2,6 +2,8 @@ numpy
 pandas
 xarray
 matplotlib
+geopandas
+shapely
 torch
 torchvision
 torchaudio

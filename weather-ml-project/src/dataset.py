@@ -4,9 +4,7 @@ import numpy as np
 import xarray as xr
 import torch
 from torch.utils.data import Dataset
-import re
-import torch
-import torch.utils.data as data
+
 
 def extract_forecast_hour(file_path):
     match = re.search(r"\.f(\d{3})_belgium\.nc$", file_path.name)

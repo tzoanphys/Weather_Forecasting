@@ -4,8 +4,8 @@ main.py — Single entry point for the full weather ML pipeline.
 Steps
 -----
 1. Download   : fetch raw GFS GRIB2 files from NOAA S3
-2. Plots      : generate exploratory wind plots from the processed NetCDF
-3. Preprocess : convert raw GRIB2 files to Belgium NetCDF subsets
+2. Preprocess : convert raw GRIB2 files to Belgium NetCDF subsets
+3. Plots      : generate exploratory wind plots from the processed NetCDF
 4. Dataset    : load the processed files and print a data summary
 5. Model      : print the CNN architecture
 6. Train      : train the BetterWindCNN and save weights
