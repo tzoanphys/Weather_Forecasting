@@ -5,78 +5,90 @@ import xarray as xr
 # Paths
 # --------------------------------------------
 project_root = Path(__file__).resolve().parent.parent
+
 raw_dir = project_root / "data" / "raw"
 processed_dir = project_root / "data" / "processed"
+
 processed_dir.mkdir(parents=True, exist_ok=True)
 
+# Find all downloaded GFS files
 raw_files = sorted(raw_dir.glob("gfs.????????.t00z.pgrb2.0p25.f*"))
 
-print(f"Found {len(raw_files)} raw files.")
+print("Number of raw files found:", len(raw_files))
 
 if not raw_files:
-    raise FileNotFoundError(f"No raw GFS files found in {raw_dir}")
+    raise FileNotFoundError("No raw GFS files found in data/raw")
+
 
 # --------------------------------------------
-# Process each file
+# Process each raw file
 # --------------------------------------------
 for raw_file in raw_files:
 
-    print("\n" + "-" * 60)
-    print(f"Loading data from: {raw_file}")
+    print("Processing file:")
+    print(raw_file)
 
-    try:
-        wind_ds = xr.open_dataset(
-            raw_file,
-            engine="cfgrib",
-            backend_kwargs={
-                "filter_by_keys": {
-                    "typeOfLevel": "heightAboveGround",
-                    "level": 10,
-                },
-                "indexpath": ""
-            }
-        )
+    # Open only 10-meter wind data from the GRIB2 file
+    wind_ds = xr.open_dataset(
+        raw_file,
+        engine="cfgrib", #GRIB2 is a meteorological format
+        backend_kwargs={
+            "filter_by_keys": {
+                "typeOfLevel": "heightAboveGround", #select variables measured above the ground, 10metters
+                "level": 10,
+            },
+            "indexpath": ""
+        }
+    )
 
-        print("Opened 10 m wind dataset.")
+    print("Opened 10-meter wind data")
 
-        if "u10" not in wind_ds.data_vars or "v10" not in wind_ds.data_vars:
-            print(f"Skipping {raw_file.name}: u10/v10 not found.")
-            continue
+    # Check that u10 and v10 exist
+    if "u10" not in wind_ds.data_vars or "v10" not in wind_ds.data_vars:
+        print("u10 or v10 not found, skipping this file")
+        continue
 
-        belgium_ds = wind_ds.sel(
-            longitude=slice(2, 7),
-            latitude=slice(52, 49)
-        )
+    # Select Belgium region
+    belgium_ds = wind_ds.sel(
+        longitude=slice(2, 7),
+        latitude=slice(52, 49)
+    )
 
-        print("Belgium subset created.")
+    print("Selected Belgium region")
 
-        if "time" in belgium_ds.coords:
-            belgium_ds = belgium_ds.assign_coords(
-                time=belgium_ds.time.astype("datetime64[s]")
-            )
+    # Remove metadata that can cause saving problems
+    belgium_ds.attrs = {}
 
-        if "valid_time" in belgium_ds.coords:
-            belgium_ds = belgium_ds.assign_coords(
-                valid_time=belgium_ds.valid_time.astype("datetime64[s]")
-            )
+    for variable in belgium_ds.data_vars:
+        belgium_ds[variable].attrs = {} #Remove metadata from each variable.
 
-        if "step" in belgium_ds.coords:
-            belgium_ds = belgium_ds.assign_coords(
-                step=belgium_ds.step.astype("timedelta64[s]")
-            )
+    # Save processed file
+    output_file = processed_dir / f"{raw_file.name}_belgium.nc"
 
-        for var_name in belgium_ds.data_vars:
-            belgium_ds[var_name].attrs = {}
+    belgium_ds.to_netcdf(output_file, engine="netcdf4")
 
-        belgium_ds.attrs = {}
+    print("Saved processed file:")
+    print(output_file)
 
-        output_file = processed_dir / f"{raw_file.name}_belgium.nc"
-        belgium_ds.to_netcdf(output_file, engine="netcdf4")
+print("All preprocessing finished")
 
-        print(f"Saved processed dataset to: {output_file}")
-        print(f"File size: {output_file.stat().st_size / (1024**2):.2f} MB")
 
-    except Exception as e:
-        print(f"Skipping {raw_file.name}: error during processing ({e})")
 
-print("\nAll preprocessing finished.")
+
+#_________________________________________________________________________
+#preprocess.py takes the raw downloaded NOAA files and makes them easier for machine learning.
+#
+# GOALS:
+#
+#1. Reads raw GFS GRIB2 files from data/raw
+#2. Extracts 10-meter wind data
+#3. Selects only the Belgium region
+#4. Saves clean NetCDF files in data/processed
+
+#   raw GRIB2 files
+#         ↓
+#   extract u10 and v10
+#		↓
+#	select Belgium
+#		↓
+#	save as NetCDF
