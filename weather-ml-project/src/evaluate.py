@@ -45,7 +45,7 @@ def main() -> None:
     # -----------------------------
     # Load dataset
     # -----------------------------
-    data, *_ = load_wind_time_series(processed_dir)
+    data, _files, latitudes, longitudes = load_wind_time_series(processed_dir)
 
     dataset = WindForecastDataset(
         data=data,
@@ -186,25 +186,34 @@ def main() -> None:
     error_speed = np.abs(corr_speed - true_speed)
 
     # -----------------------------
-    # Final plot
+    # Final plot (lat/lon axes, no country overlays)
     # -----------------------------
+    lon = np.asarray(longitudes, dtype=float)
+    lat = np.asarray(latitudes, dtype=float)
+    lon0, lon1 = float(lon.min()), float(lon.max())
+    if lat[0] > lat[-1]:
+        extent = (lon0, lon1, float(lat[-1]), float(lat[0]))
+    else:
+        extent = (lon0, lon1, float(lat[0]), float(lat[-1]))
+
     fig, axes = plt.subplots(1, 4, figsize=(20, 5))
+    mean_lat = 0.5 * (extent[2] + extent[3])
+    aspect = 1.0 / np.cos(np.radians(mean_lat))
 
-    axes[0].imshow(true_speed)
-    axes[0].set_title("True wind speed")
+    panels = [
+        (axes[0], true_speed, "True wind speed (m/s)", "viridis", "m/s"),
+        (axes[1], pred_speed, "Raw prediction (m/s)", "viridis", "m/s"),
+        (axes[2], corr_speed, "Corrected prediction (m/s)", "viridis", "m/s"),
+        (axes[3], error_speed, "|Corrected − true| (m/s)", "magma", "m/s"),
+    ]
 
-    axes[1].imshow(pred_speed)
-    axes[1].set_title("Raw prediction")
-
-    axes[2].imshow(corr_speed)
-    axes[2].set_title("Corrected prediction")
-
-    axes[3].imshow(error_speed)
-    axes[3].set_title("Corrected error")
-
-    for ax in axes:
-        ax.set_xticks([])
-        ax.set_yticks([])
+    for ax, field, title, cmap, cbar_label in panels:
+        im = ax.imshow(field, origin="upper", extent=extent, cmap=cmap, aspect="auto")
+        ax.set_aspect(aspect)
+        ax.set_title(title, fontsize=11)
+        ax.set_xlabel("Longitude °E", fontsize=9)
+        ax.set_ylabel("Latitude °N", fontsize=9)
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label=cbar_label)
 
     plt.tight_layout()
 

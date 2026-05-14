@@ -10,26 +10,35 @@ const mlOutputs =
 const destDir = path.resolve(ROOT, "public", "ml");
 fs.mkdirSync(destDir, { recursive: true });
 
-const filesToCopy = [
-  "training_history.json",
-  "evaluation_summary.json",
-];
+const filesToCopy = ["training_history.json", "evaluation_summary.json"];
 
 for (const file of filesToCopy) {
   const src = path.resolve(mlOutputs, file);
-  if (!fs.existsSync(src)) continue;
-  fs.copyFileSync(src, path.resolve(destDir, file));
-  console.log(`Copied ${file}`);
+  const dest = path.resolve(destDir, file);
+  if (fs.existsSync(src)) {
+    fs.copyFileSync(src, dest);
+    console.log(`Copied ${file}`);
+  } else if (fs.existsSync(dest)) {
+    fs.unlinkSync(dest);
+    console.log(`Removed stale ${file} (not present in ML outputs)`);
+  }
 }
 
-// Copy any rendered PNGs so the dashboard can show them.
 if (fs.existsSync(mlOutputs)) {
   for (const entry of fs.readdirSync(mlOutputs)) {
     if (!entry.toLowerCase().endsWith(".png")) continue;
+    if (entry !== "final_evaluation_plot.png") continue;
     fs.copyFileSync(path.resolve(mlOutputs, entry), path.resolve(destDir, entry));
   }
-  console.log("Copied PNG artifacts");
+  console.log("Copied final_evaluation_plot.png (if present)");
+}
+
+if (fs.existsSync(destDir)) {
+  for (const entry of fs.readdirSync(destDir)) {
+    if (!/^error_maps_/i.test(entry)) continue;
+    fs.unlinkSync(path.resolve(destDir, entry));
+    console.log(`Removed ${entry}`);
+  }
 }
 
 console.log(`Done. Frontend artifacts in: ${destDir}`);
-

@@ -14,3 +14,4 @@ cd C:\Users\tzoan\Desktop\Weather_Forecasting\frontend
 npm install
 npm run dev
 Then open the local URL Vite prints (usually http://localhost:5173).
+does github work ?

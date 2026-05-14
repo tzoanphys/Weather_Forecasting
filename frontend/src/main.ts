@@ -1,8 +1,12 @@
 import "./style.css";
 
-const app = document.querySelector<HTMLDivElement>("#app");
-if (!app) throw new Error("Missing #app element");
-const appEl: HTMLDivElement = app;
+function getAppRoot(): HTMLElement {
+  const el = document.getElementById("app");
+  if (!el) throw new Error("Missing #app");
+  return el;
+}
+
+const appRoot = getAppRoot();
 
 type TrainingHistory = {
   epochs: number[];
@@ -11,391 +15,203 @@ type TrainingHistory = {
   ratio_val_to_train_mse: number[];
   best_epoch: number | null;
   best_val_mse: number | null;
-  stopped_early: boolean;
 };
 
 type EvalSummary = {
-  mse: { mean: number; std: number; min: number; max: number };
-  mae: { mean: number; std: number; min: number; max: number };
-  best: { dataset_index: number; evaluation_image: string; error_map_image: string };
-  worst: { dataset_index: number; evaluation_image: string; error_map_image: string };
+  raw_mse?: number;
+  raw_mae?: number;
+  corrected_mse?: number;
+  corrected_mae?: number;
+  validation_samples?: number;
+  plotted_sample_index?: number;
+  final_plot?: string;
 };
 
-const fmt = (x: number) => (Number.isFinite(x) ? x.toFixed(6) : String(x));
+const fmt = (x: unknown, d = 4): string => {
+  const n = typeof x === "number" ? x : Number(x);
+  return Number.isFinite(n) ? n.toFixed(d) : "—";
+};
 
-function sparklineSvg(values: number[], width = 560, height = 160) {
-  if (values.length < 2) return "";
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const pad = 10;
-  const w = width - pad * 2;
-  const h = height - pad * 2;
-
-  const pts = values
-    .map((v, i) => {
-      const x = pad + (i / (values.length - 1)) * w;
-      const y = pad + (1 - (v - min) / range) * h;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
-
-  return `
-    <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" role="img" aria-label="metric chart">
-      <polyline fill="none" stroke="rgba(120,190,255,0.95)" stroke-width="2.2" points="${pts}" />
-      <rect x="0" y="0" width="${width}" height="${height}" fill="none" stroke="rgba(255,255,255,0.10)" />
-      <text x="${pad}" y="${height - 8}" fill="rgba(234,240,255,0.7)" font-size="12">min ${fmt(min)} · max ${fmt(max)}</text>
-    </svg>
-  `;
+function last<T>(arr: T[] | undefined): T | undefined {
+  if (!arr?.length) return undefined;
+  return arr[arr.length - 1];
 }
 
-function dualSparklineSvg(
-  a: number[],
-  b: number[],
-  labels: { a: string; b: string } = { a: "Train", b: "Val" },
-  width = 560,
-  height = 180,
-) {
-  const n = Math.min(a.length, b.length);
-  if (n < 2) return "";
-
-  const aN = a.slice(0, n);
-  const bN = b.slice(0, n);
-  const all = [...aN, ...bN];
-
-  const min = Math.min(...all);
-  const max = Math.max(...all);
-  const range = max - min || 1;
-  const pad = 12;
-  const w = width - pad * 2;
-  const h = height - pad * 2;
-
-  const pts = (values: number[]) =>
-    values
-      .map((v, i) => {
-        const x = pad + (i / (n - 1)) * w;
-        const y = pad + (1 - (v - min) / range) * h;
-        return `${x.toFixed(2)},${y.toFixed(2)}`;
-      })
-      .join(" ");
-
-  const aPts = pts(aN);
-  const bPts = pts(bN);
-
-  return `
-    <svg viewBox="0 0 ${width} ${height}" width="100%" height="${height}" role="img" aria-label="metric chart">
-      <rect x="0" y="0" width="${width}" height="${height}" fill="none" stroke="rgba(255,255,255,0.10)" />
-      <polyline fill="none" stroke="rgba(120,190,255,0.95)" stroke-width="2.4" points="${aPts}" />
-      <polyline fill="none" stroke="rgba(255,170,110,0.95)" stroke-width="2.4" points="${bPts}" />
-
-      <g font-size="12" fill="rgba(234,240,255,0.75)">
-        <rect x="${pad}" y="${pad - 2}" width="12" height="3" fill="rgba(120,190,255,0.95)" />
-        <text x="${pad + 18}" y="${pad + 2}">${labels.a}</text>
-        <rect x="${pad + 90}" y="${pad - 2}" width="12" height="3" fill="rgba(255,170,110,0.95)" />
-        <text x="${pad + 108}" y="${pad + 2}">${labels.b}</text>
-      </g>
-
-      <text x="${pad}" y="${height - 10}" fill="rgba(234,240,255,0.7)" font-size="12">min ${fmt(min)} · max ${fmt(max)}</text>
-    </svg>
-  `;
+function overfittingVerdict(h: TrainingHistory | null): { text: string; tone: "good" | "warn" | "bad" | "muted" } {
+  if (!h?.train?.mse?.length || !h.val?.mse?.length) {
+    return { text: "Overfitting: unknown (no training export).", tone: "muted" };
+  }
+  if (h.train.mse.length < 8) {
+    return { text: "Overfitting: unknown (need more epochs in export).", tone: "muted" };
+  }
+  const ratio = last(h.ratio_val_to_train_mse) ?? NaN;
+  const t = h.train.mse;
+  const v = h.val.mse;
+  const t0 = t[Math.max(0, t.length - 6)];
+  const t1 = last(t)!;
+  const v0 = v[Math.max(0, v.length - 6)];
+  const v1 = last(v)!;
+  const diverge = t1 < t0 * 0.98 && v1 > v0 * 1.03;
+  if (Number.isFinite(ratio) && ratio >= 1.35 && diverge) {
+    return { text: `Overfitting observed: likely (val/train MSE ≈ ${fmt(ratio)}).`, tone: "bad" };
+  }
+  if (Number.isFinite(ratio) && ratio >= 1.35) {
+    return { text: `Overfitting observed: possible (val/train MSE ≈ ${fmt(ratio)}).`, tone: "warn" };
+  }
+  if (diverge) {
+    return { text: `Overfitting observed: mild (val rising, train falling in last epochs).`, tone: "warn" };
+  }
+  return { text: `Overfitting observed: no strong signal (val/train MSE ≈ ${fmt(ratio)}).`, tone: "good" };
 }
 
-function overfittingBadge(history: TrainingHistory) {
-  const t = history.train.mse;
-  const v = history.val.mse;
-  if (t.length < 8 || v.length < 8) return { label: "Not enough data", level: "pill" };
-
-  const lastN = 6;
-  const t0 = t[t.length - lastN];
-  const t1 = t[t.length - 1];
-  const v0 = v[v.length - lastN];
-  const v1 = v[v.length - 1];
-  const ratio = history.ratio_val_to_train_mse[history.ratio_val_to_train_mse.length - 1] ?? Infinity;
-
-  // Heuristic: train improves while val worsens, plus a big gap.
-  const trainImproved = t1 < t0 * 0.98;
-  const valWorsened = v1 > v0 * 1.03;
-  const bigGap = ratio >= 1.35;
-
-  if (trainImproved && valWorsened && bigGap) return { label: "Likely overfitting", level: "pill pill--bad" };
-  if (bigGap) return { label: "Possible overfitting (val≫train)", level: "pill pill--warn" };
-  return { label: "Looks OK", level: "pill pill--good" };
+function variablesHtml(h: TrainingHistory | null, ev: EvalSummary | null): string {
+  const rows: [string, string][] = [];
+  if (h?.epochs?.length) {
+    const n = h.epochs.length;
+    rows.push(["Epoch (last)", String(h.epochs[n - 1])]);
+    rows.push(["Train MSE", fmt(last(h.train.mse))]);
+    rows.push(["Val MSE", fmt(last(h.val.mse))]);
+    rows.push(["Train MAE", fmt(last(h.train.mae))]);
+    rows.push(["Val MAE", fmt(last(h.val.mae))]);
+    if (h.best_epoch != null) rows.push(["Best val epoch", String(h.best_epoch)]);
+  }
+  if (ev?.raw_mse != null) {
+    rows.push(["Eval raw MSE", fmt(ev.raw_mse)]);
+    rows.push(["Eval raw MAE", fmt(ev.raw_mae)]);
+    rows.push(["Eval corr. MSE", fmt(ev.corrected_mse)]);
+    rows.push(["Eval corr. MAE", fmt(ev.corrected_mae)]);
+    rows.push(["Val tiles", String(ev.validation_samples ?? "—")]);
+  }
+  if (!rows.length) return '<p class="hint">Press Run to train + evaluate, then values appear here.</p>';
+  return `<dl class="var-grid">${rows.map(([k, v]) => `<div class="var-row"><dt>${k}</dt><dd>${v}</dd></div>`).join("")}</dl>`;
 }
 
-function mean(xs: number[]) {
-  const ok = xs.filter((x) => Number.isFinite(x));
-  if (ok.length === 0) return NaN;
-  return ok.reduce((a, b) => a + b, 0) / ok.length;
-}
-
-function overfittingAnalysis(history: TrainingHistory) {
-  const trainMse = history.train.mse;
-  const valMse = history.val.mse;
-  const n = Math.min(trainMse.length, valMse.length);
-  if (n < 8) {
-    return {
-      verdict: "Not enough epochs to assess overfitting.",
-      level: "good" as const,
-      bullets: ["Train/val comparison becomes meaningful after ~8–10 epochs."],
-    };
+function parseJson<T>(text: string): T | null {
+  const t = text.trim();
+  if (!t) return null;
+  try {
+    return JSON.parse(t) as T;
+  } catch {
+    return null;
   }
-
-  const bestEpoch = history.best_epoch ?? null;
-  const lastRatio = history.ratio_val_to_train_mse[history.ratio_val_to_train_mse.length - 1] ?? Infinity;
-
-  const tail = 6;
-  const tTail = trainMse.slice(-tail);
-  const vTail = valMse.slice(-tail);
-  const tDelta = tTail[tTail.length - 1] - tTail[0];
-  const vDelta = vTail[vTail.length - 1] - vTail[0];
-
-  const gapLabel =
-    lastRatio < 1.15 ? "small" : lastRatio < 1.35 ? "moderate" : "large";
-
-  const bullets: string[] = [
-    `Generalization gap (val/train MSE) is ${gapLabel}: ${fmt(lastRatio)}.`,
-    `Last ${tail} epochs trend: train Δ ${fmt(tDelta)} (↓ is good), val Δ ${fmt(vDelta)} (↑ is bad).`,
-  ];
-
-  // If the best epoch is meaningfully earlier than the last, that’s a common overfit symptom.
-  if (bestEpoch && bestEpoch < history.epochs[history.epochs.length - 1]) {
-    bullets.push(`Best validation epoch was ${bestEpoch}, earlier than the last epoch (${history.epochs.at(-1)}).`);
-  }
-
-  // Verdict rules: prioritize (1) big gap, (2) opposite trends, (3) best epoch earlier.
-  const oppositeTrends = tDelta < 0 && vDelta > 0;
-  const bigGap = lastRatio >= 1.35;
-
-  if (bigGap && oppositeTrends) {
-    return {
-      verdict: "Likely overfitting: training keeps improving but validation is getting worse.",
-      level: "bad" as const,
-      bullets,
-    };
-  }
-
-  if (bigGap) {
-    return {
-      verdict: "Possible overfitting: validation error is much higher than training.",
-      level: "warn" as const,
-      bullets: [...bullets, "This can also happen with a small/noisy validation set."],
-    };
-  }
-
-  if (oppositeTrends) {
-    return {
-      verdict: "Some overfitting signal in the last epochs (val rising while train falls).",
-      level: "warn" as const,
-      bullets,
-    };
-  }
-
-  return {
-    verdict: "No strong overfitting signal in the metrics shown.",
-    level: "good" as const,
-    bullets,
-  };
 }
 
 async function loadJson<T>(url: string): Promise<T | null> {
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) return null;
-  return (await res.json()) as T;
+  return parseJson<T>(await res.text());
 }
 
-async function runBackend(task: "train" | "evaluate" | "train+evaluate") {
-  const res = await fetch(`/api/run?task=${encodeURIComponent(task)}`, { method: "POST" });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body?.error ?? `Backend run failed (${res.status})`);
-  return body;
+async function runPipeline(): Promise<void> {
+  const res = await fetch("/api/run?task=train%2Bevaluate", { method: "POST" });
+  const text = await res.text();
+  const body = parseJson<{ error?: string }>(text) ?? {};
+  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
 }
 
-async function backendStatus() {
-  const res = await fetch("/api/status", { cache: "no-store" });
-  if (!res.ok) return null;
-  return (await res.json()) as any;
+function plotSrc(ev: EvalSummary | null): string {
+  const name = ev?.final_plot?.replace(/\\/g, "/").split("/").pop()?.trim();
+  return `/ml/${encodeURIComponent(name || "final_evaluation_plot.png")}`;
 }
 
-async function render() {
-  appEl.innerHTML = `
-    <div class="card">
-      <div class="card__inner">
-        <div class="row" style="justify-content: space-between;">
-          <div>
-            <h1 class="title">Weather Forecasting — Training Dashboard</h1>
-            <p class="muted">Shows best evaluation sample + error maps, epoch metrics (MSE/MAE), and an overfitting signal.</p>
-          </div>
-          <div class="row" style="gap: 10px;">
-            <button id="runBackendBtn" class="btn">Run backend (train + evaluate)</button>
-          </div>
-        </div>
-
-        <div id="status" class="muted">Loading ML artifacts from <code>/ml/</code> …</div>
-        <div id="backendStatus" class="muted" style="margin-top: 6px;"></div>
-
-        <div class="row" style="align-items: stretch; gap: 16px;">
-          <div style="flex: 1; min-width: 260px;">
-            <div class="pill" style="display:inline-block;margin-bottom:10px;">Training (per epoch)</div>
-            <div id="trainCharts"></div>
-            <div id="trainCards"></div>
-          </div>
-          <div style="flex: 1; min-width: 260px;">
-            <div class="pill" style="display:inline-block;margin-bottom:10px;">Evaluation (best / worst)</div>
-            <div id="evalCards"></div>
-            <div id="evalImages"></div>
-          </div>
-        </div>
-      </div>
+function mount(): void {
+  appRoot.innerHTML = `
+    <div class="wrap">
+      <header class="hero">
+        <p class="hero__kicker">Belgium · gridded 10&nbsp;m wind</p>
+        <h1 class="hero__title">
+          <span class="hero__title-flair">Belgian winds</span>
+          <span class="hero__title-sub">ML model dashboard</span>
+        </h1>
+        <p class="hero__lead">
+          The data are <strong>Belgian</strong> wind fields on a lat–lon grid over the country; training and evaluation run on your machine and refresh the metrics, overfitting readout, and map-style plot you see in the card.
+          Press <strong>Run</strong> whenever you want another full train/eval cycle so the chart and numbers below match the latest export.
+        </p>
+      </header>
+      <main class="panel">
+        <button type="button" id="run" class="run">Run</button>
+        <p id="note" class="note"></p>
+        <section id="vars" class="vars"></section>
+        <p id="fit" class="fit" data-tone="muted"></p>
+        <figure class="plot" id="plotBox" hidden>
+          <img id="chart" alt="Evaluation plot" />
+          <figcaption id="cap" class="cap" hidden>Could not load plot image.</figcaption>
+        </figure>
+      </main>
     </div>
   `;
+}
 
-  const status = document.querySelector<HTMLDivElement>("#status")!;
-  const backendStatusEl = document.querySelector<HTMLDivElement>("#backendStatus")!;
-  const trainCards = document.querySelector<HTMLDivElement>("#trainCards")!;
-  const trainCharts = document.querySelector<HTMLDivElement>("#trainCharts")!;
-  const evalCards = document.querySelector<HTMLDivElement>("#evalCards")!;
-  const evalImages = document.querySelector<HTMLDivElement>("#evalImages")!;
-  const runBtn = document.querySelector<HTMLButtonElement>("#runBackendBtn")!;
+function clear(): void {
+  document.getElementById("vars")!.innerHTML = "";
+  const fit = document.getElementById("fit")!;
+  fit.textContent = "";
+  fit.dataset.tone = "muted";
+  const plotBox = document.getElementById("plotBox")!;
+  plotBox.hidden = true;
+  const img = document.getElementById("chart") as HTMLImageElement;
+  img.removeAttribute("src");
+  img.style.display = "";
+  document.getElementById("cap")!.hidden = true;
+}
 
-  const refreshBackendStatus = async () => {
-    const st = await backendStatus();
-    if (!st) {
-      backendStatusEl.textContent = "";
-      return;
-    }
-    if (st.running) {
-      backendStatusEl.textContent = `Backend is running (${st.task})… started ${st.startedAt}`;
-    } else if (st.lastFinishedAt) {
-      const ok = st.lastExitCode === 0;
-      backendStatusEl.textContent = `Last backend run: ${ok ? "OK" : "FAILED"} (exit ${st.lastExitCode}) at ${st.lastFinishedAt}`;
-    } else {
-      backendStatusEl.textContent = "";
-    }
-  };
+async function show(): Promise<void> {
+  const note = document.getElementById("note")!;
+  const vars = document.getElementById("vars")!;
+  const fit = document.getElementById("fit")!;
+  const img = document.getElementById("chart") as HTMLImageElement;
+  const cap = document.getElementById("cap")!;
+  const plotBox = document.getElementById("plotBox")!;
 
-  runBtn.addEventListener("click", async () => {
-    runBtn.disabled = true;
-    status.textContent = "Running backend… (this can take a while)";
-    try {
-      await runBackend("train+evaluate");
-      status.textContent = "Backend finished. Reloading artifacts…";
-      await render();
-    } catch (e: any) {
-      status.textContent = `Backend run failed: ${String(e?.message ?? e)}`;
-      await refreshBackendStatus();
-    } finally {
-      runBtn.disabled = false;
-    }
-  });
-
-  await refreshBackendStatus();
-
-  const [history, evalSummary] = await Promise.all([
+  const [h, ev] = await Promise.all([
     loadJson<TrainingHistory>("/ml/training_history.json"),
     loadJson<EvalSummary>("/ml/evaluation_summary.json"),
   ]);
 
-  if (!history && !evalSummary) {
-    status.innerHTML = `
-      Missing ML artifact files.
-      Generate them by running training + evaluation, then copy artifacts:
-      <br/><br/>
-      <code>python weather-ml-project/main.py</code> (or run <code>src/train.py</code> + <code>src/evaluate.py</code>)
-      <br/>
-      <code>cd frontend && npm run sync:ml</code>
-    `;
-    return;
-  }
+  note.textContent = "Done.";
+  vars.innerHTML = variablesHtml(h, ev);
+  const verdict = overfittingVerdict(h);
+  fit.textContent = verdict.text;
+  fit.dataset.tone = verdict.tone;
 
-  status.textContent = "Loaded.";
-
-  if (history) {
-    const badge = overfittingBadge(history);
-    const analysis = overfittingAnalysis(history);
-    const lastEpoch = history.epochs[history.epochs.length - 1] ?? 0;
-    const lastTrainMse = history.train.mse[history.train.mse.length - 1] ?? NaN;
-    const lastValMse = history.val.mse[history.val.mse.length - 1] ?? NaN;
-    const lastTrainMae = history.train.mae[history.train.mae.length - 1] ?? NaN;
-    const lastValMae = history.val.mae[history.val.mae.length - 1] ?? NaN;
-    const ratio = history.ratio_val_to_train_mse[history.ratio_val_to_train_mse.length - 1] ?? NaN;
-
-    trainCards.innerHTML = `
-      <div class="section">
-        <div class="section__title">Training summary</div>
-        <div class="row" style="gap: 10px; margin-top: 6px;">
-          <span class="${badge.level}">${badge.label}</span>
-          <span class="pill">Best epoch: ${history.best_epoch ?? "—"}</span>
-          <span class="pill">Early stop: ${history.stopped_early ? "yes" : "no"}</span>
-        </div>
-        <div class="grid" style="margin-top: 10px;">
-          <div class="stat"><div class="stat__k">Last epoch</div><div class="stat__v">${lastEpoch}</div></div>
-          <div class="stat"><div class="stat__k">Train MSE</div><div class="stat__v">${fmt(lastTrainMse)}</div></div>
-          <div class="stat"><div class="stat__k">Val MSE</div><div class="stat__v">${fmt(lastValMse)}</div></div>
-          <div class="stat"><div class="stat__k">Train MAE</div><div class="stat__v">${fmt(lastTrainMae)}</div></div>
-          <div class="stat"><div class="stat__k">Val MAE</div><div class="stat__v">${fmt(lastValMae)}</div></div>
-          <div class="stat"><div class="stat__k">Val/Train MSE</div><div class="stat__v">${fmt(ratio)}</div></div>
-        </div>
-      </div>
-
-      <div class="section" style="margin-top: 12px;">
-        <div class="section__title">Overfitting interpretation</div>
-        <div class="callout callout--${analysis.level}">
-          <div class="callout__title">${analysis.verdict}</div>
-          <ul class="callout__list">
-            ${analysis.bullets.map((b) => `<li>${b}</li>`).join("")}
-          </ul>
-        </div>
-      </div>
-    `;
-
-    trainCharts.innerHTML = `
-      <div style="margin-top: 8px;">
-        <div class="muted" style="margin-bottom: 6px;">MSE (Train vs Val)</div>
-        ${dualSparklineSvg(history.train.mse, history.val.mse)}
-      </div>
-      <div style="margin-top: 14px;">
-        <div class="muted" style="margin-bottom: 6px;">MAE (Train vs Val)</div>
-        ${dualSparklineSvg(history.train.mae, history.val.mae)}
-      </div>
-    `;
-  } else {
-    trainCards.innerHTML = `<div class="muted">No <code>training_history.json</code> found.</div>`;
-  }
-
-  if (evalSummary) {
-    evalCards.innerHTML = `
-      <div class="row" style="gap: 10px; margin-bottom: 12px;">
-        <span class="pill">Best sample: ${evalSummary.best.dataset_index}</span>
-        <span class="pill">Worst sample: ${evalSummary.worst.dataset_index}</span>
-      </div>
-      <div class="row" style="gap: 10px; margin-bottom: 12px;">
-        <span class="pill">MSE mean: ${fmt(evalSummary.mse.mean)}</span>
-        <span class="pill">MAE mean: ${fmt(evalSummary.mae.mean)}</span>
-        <span class="pill">MSE min: ${fmt(evalSummary.mse.min)}</span>
-        <span class="pill">MSE max: ${fmt(evalSummary.mse.max)}</span>
-      </div>
-    `;
-
-    const bestEval = `/ml/${evalSummary.best.evaluation_image}`;
-    const bestErr = `/ml/${evalSummary.best.error_map_image}`;
-
-    evalImages.innerHTML = `
-      <div style="display:grid; gap: 12px;">
-        <div>
-          <div class="muted" style="margin-bottom: 6px;">Best sample — prediction vs truth</div>
-          <img src="${bestEval}" alt="Best evaluation sample" style="width:100%; border-radius: 12px; border: 1px solid rgba(255,255,255,0.10);" />
-        </div>
-        <div>
-          <div class="muted" style="margin-bottom: 6px;">Best sample — error maps</div>
-          <img src="${bestErr}" alt="Best error maps" style="width:100%; border-radius: 12px; border: 1px solid rgba(255,255,255,0.10);" />
-        </div>
-      </div>
-    `;
-  } else {
-    evalCards.innerHTML = `<div class="muted">No <code>evaluation_summary.json</code> found.</div>`;
-  }
+  const url = plotSrc(ev) + `?t=${Date.now()}`;
+  img.style.display = "";
+  img.onload = () => {
+    cap.hidden = true;
+    plotBox.hidden = false;
+  };
+  img.onerror = () => {
+    img.style.display = "none";
+    cap.hidden = false;
+    plotBox.hidden = false;
+  };
+  img.src = url;
 }
 
-render().catch((e) => {
-  appEl.innerHTML = `<pre class="muted">${String(e?.stack ?? e)}</pre>`;
+async function init(): Promise<void> {
+  mount();
+  const run = document.getElementById("run") as HTMLButtonElement;
+  const note = document.getElementById("note")!;
+
+  run.addEventListener("click", async () => {
+    run.disabled = true;
+    clear();
+    note.textContent = "Running…";
+    try {
+      await runPipeline();
+      note.textContent = "Loading…";
+      await show();
+    } catch (e) {
+      note.textContent = String((e as Error).message ?? e);
+    } finally {
+      run.disabled = false;
+    }
+  });
+
+  clear();
+  note.textContent = "Press Run to train, evaluate, and show the plot and numbers.";
+}
+
+init().catch((e) => {
+  appRoot.innerHTML = `<pre class="err">${String((e as Error).stack ?? e)}</pre>`;
 });

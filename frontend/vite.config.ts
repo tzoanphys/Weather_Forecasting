@@ -22,15 +22,30 @@ function copyArtifacts() {
   const destDir = path.resolve(frontendRoot, "public", "ml");
   fs.mkdirSync(destDir, { recursive: true });
 
+  // Copy JSON artifacts from ML outputs, or remove stale copies so the UI
+  // does not show an old training_history.json next to a fresh evaluation_summary.json.
   for (const file of ["training_history.json", "evaluation_summary.json"]) {
     const src = path.resolve(mlOutputs, file);
-    if (fs.existsSync(src)) fs.copyFileSync(src, path.resolve(destDir, file));
+    const dest = path.resolve(destDir, file);
+    if (fs.existsSync(src)) {
+      fs.copyFileSync(src, dest);
+    } else if (fs.existsSync(dest)) {
+      fs.unlinkSync(dest);
+    }
   }
 
   if (fs.existsSync(mlOutputs)) {
     for (const entry of fs.readdirSync(mlOutputs)) {
       if (!entry.toLowerCase().endsWith(".png")) continue;
+      if (entry !== "final_evaluation_plot.png") continue;
       fs.copyFileSync(path.resolve(mlOutputs, entry), path.resolve(destDir, entry));
+    }
+  }
+
+  if (fs.existsSync(destDir)) {
+    for (const entry of fs.readdirSync(destDir)) {
+      if (!/^error_maps_/i.test(entry)) continue;
+      fs.unlinkSync(path.resolve(destDir, entry));
     }
   }
 }
@@ -39,7 +54,7 @@ function backendRunnerPlugin(): Plugin {
   return {
     name: "backend-runner",
     configureServer(server) {
-      server.middlewares.use("/api/status", (req, res) => {
+      server.middlewares.use("/api/status", (_req, res) => {
         json(res, 200, state);
       });
 
